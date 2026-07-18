@@ -131,6 +131,10 @@
     return project.stack === 'python' ? project.app_url + '/docs' : project.app_url;
   }
 
+  function repoLabel(url) {
+    return url.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+  }
+
   function publicHref(project) {
     if (!project.public_url) return null;
     return project.stack === 'python' ? project.public_url + '/docs' : project.public_url;
@@ -266,6 +270,7 @@
               <th class="sortable" onclick={() => setSort('name')}>
                 Aplicación<span class="sort-arrow {sortKey === 'name' ? 'active' : ''}">{sortKey === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
+              <th class="folder-col">Origen</th>
               <th class="sortable" onclick={() => setSort('project')}>
                 Proyecto<span class="sort-arrow {sortKey === 'project' ? 'active' : ''}">{sortKey === 'project' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
@@ -295,6 +300,31 @@
               {@const st = effectiveStatus(project.id)}
               <tr>
                 <td class="project-name">{project.name}</td>
+                <td class="folder-cell">
+                  <span
+                    class="folder-icon"
+                    title="Carpeta: {project.id}"
+                    aria-label="Carpeta del proyecto: {project.id}"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </span>
+                  {#if project.repo_url}
+                    <a
+                      class="repo-icon"
+                      href={project.repo_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Repositorio: {repoLabel(project.repo_url)}"
+                      aria-label="Abrir repositorio {repoLabel(project.repo_url)} en GitHub"
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+                      </svg>
+                    </a>
+                  {/if}
+                </td>
                 <td class="project-group">
                   {#if PROJECT_BY_APP[project.id]}
                     {PROJECT_BY_APP[project.id]}
@@ -635,6 +665,68 @@
     background: #ffedd5;
     color: #1e40af;
     border: 1px solid #fed7aa;
+  }
+
+  .folder-col {
+    text-align: center;
+  }
+
+  .folder-cell {
+    white-space: nowrap;
+    text-align: center;
+    width: 1%;
+  }
+
+  .folder-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #d97706;
+    border: 1px solid #fde68a;
+    background: #fffbeb;
+    border-radius: 6px;
+    cursor: help;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+  }
+
+  .folder-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .folder-icon:hover {
+    background: #fef3c7;
+    color: #b45309;
+    border-color: #fcd34d;
+    transform: scale(1.05);
+  }
+
+  .repo-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin-left: 6px;
+    color: #24292f;
+    border: 1px solid #d0d7de;
+    background: #f6f8fa;
+    border-radius: 6px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+  }
+
+  .repo-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .repo-icon:hover {
+    background: #eaeef2;
+    color: #0969da;
+    border-color: #afb8c1;
+    transform: scale(1.05);
   }
 
   .app-cell {
