@@ -292,8 +292,8 @@
               <th class="sortable" onclick={() => setSort('port')}>
                 Puerto<span class="sort-arrow {sortKey === 'port' ? 'active' : ''}">{sortKey === 'port' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
-              <th class="sortable" onclick={() => setSort('webhook')}>
-                URL Webhook<span class="sort-arrow {sortKey === 'webhook' ? 'active' : ''}">{sortKey === 'webhook' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
+              <th class="sortable webhook-col" onclick={() => setSort('webhook')}>
+                Webhook<span class="sort-arrow {sortKey === 'webhook' ? 'active' : ''}">{sortKey === 'webhook' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
               <th class="sortable" onclick={() => setSort('status')}>
                 Estado<span class="sort-arrow {sortKey === 'status' ? 'active' : ''}">{sortKey === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
@@ -809,10 +809,16 @@
     border: 1px solid #e2e8f0;
   }
 
+  .webhook-col {
+    text-align: center;
+  }
+
   .webhook-cell {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    width: 1%;
+    white-space: nowrap;
   }
 
   .deploy-btn {
