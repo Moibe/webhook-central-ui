@@ -293,7 +293,7 @@
                 Puerto<span class="sort-arrow {sortKey === 'port' ? 'active' : ''}">{sortKey === 'port' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
               <th class="sortable webhook-col" onclick={() => setSort('webhook')}>
-                Webhook<span class="sort-arrow {sortKey === 'webhook' ? 'active' : ''}">{sortKey === 'webhook' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
+                DEPLOY<span class="sort-arrow {sortKey === 'webhook' ? 'active' : ''}">{sortKey === 'webhook' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
               <th class="sortable" onclick={() => setSort('status')}>
                 Estado<span class="sort-arrow {sortKey === 'status' ? 'active' : ''}">{sortKey === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
@@ -814,11 +814,9 @@
   }
 
   .webhook-cell {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1%;
     white-space: nowrap;
+    text-align: center;
+    width: 1%;
   }
 
   .deploy-btn {
