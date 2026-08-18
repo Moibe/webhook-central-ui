@@ -285,7 +285,7 @@
               <th class="sortable" onclick={() => setSort('branch')}>
                 Branch<span class="sort-arrow {sortKey === 'branch' ? 'active' : ''}">{sortKey === 'branch' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
-              <th></th>
+              <th class="app-col">DOM</th>
               <th class="sortable" onclick={() => setSort('type')}>
                 Tipo de App<span class="sort-arrow {sortKey === 'type' ? 'active' : ''}">{sortKey === 'type' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
@@ -672,6 +672,10 @@
   }
 
   .folder-col {
+    text-align: center;
+  }
+
+  .app-col {
     text-align: center;
   }
 
