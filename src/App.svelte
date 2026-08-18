@@ -14,9 +14,14 @@
     'document_ai': 'Art',
     'conmutador': 'Art',
     'webhook-central-ui': 'DevOps',
+    'webhook-central': 'DevOps',
     'constructor-agente-rag': 'Buzzword Agentes',
     'buzzword-agentes-ui': 'Buzzword Agentes',
     'host-asistentes': 'Buzzword Agentes',
+    'nexus_back': 'Nexus IA',
+    'nexus_poc_svelte': 'Nexus IA',
+    'infra-timelapse': 'Prototipo',
+    'shape_up': 'Prototipo',
   };
 
   let projects = $state([]);
@@ -333,8 +338,8 @@
                   {/if}
                 </td>
                 <td>
-                  <span class="badge {project.stack === 'svelte' ? 'badge-svelte' : 'badge-python'}">
-                    {project.stack}
+                  <span class="badge {project.stack === 'svelte' ? 'badge-svelte' : project.stack === 'python' ? 'badge-python' : 'badge-config'}">
+                    {project.stack === 'none' ? 'config' : project.stack}
                   </span>
                 </td>
                 <td class="branch">{project.branch}</td>
@@ -387,18 +392,11 @@
                     class="deploy-btn"
                     onclick={(e) => triggerWebhook(e, project)}
                     disabled={st.kind === 'loading' || st.kind === 'running'}
-                    aria-label="Desplegar {project.name}"
-                    title="Desplegar {project.name}"
+                    aria-label="Desplegar {project.name}: {webhookUrl(project)}"
+                    title={webhookUrl(project)}
                   >
                     🚀
                   </button>
-                  <a
-                    href={webhookUrl(project)}
-                    class="webhook-link"
-                    onclick={(e) => triggerWebhook(e, project)}
-                  >
-                    {webhookUrl(project)}
-                  </a>
                 </td>
                 <td class="status-cell">
                   {#if st.kind === 'loading'}
@@ -667,6 +665,12 @@
     border: 1px solid #fed7aa;
   }
 
+  .badge-config {
+    background: #e2e8f0;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+  }
+
   .folder-col {
     text-align: center;
   }
@@ -841,21 +845,6 @@
   .deploy-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .webhook-link {
-    font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 0.78rem;
-    color: #2563eb;
-    text-decoration: none;
-    word-break: break-all;
-    border-bottom: 1px dashed #93c5fd;
-    transition: color 0.15s, border-color 0.15s;
-  }
-
-  .webhook-link:hover {
-    color: #1d4ed8;
-    border-bottom-color: #1d4ed8;
   }
 
   .status-cell {
