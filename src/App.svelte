@@ -42,6 +42,8 @@
   let sortKey = $state('project');
   let sortDir = $state('asc');
 
+  let activeEnv = $state('dev');
+
   function setSort(key) {
     if (sortKey === key) {
       sortDir = sortDir === 'asc' ? 'desc' : 'asc';
@@ -287,8 +289,28 @@
       <p>Panel de despliegue de servicios{pollOk ? '' : ' · sin telemetría aún'}</p>
     </header>
 
-    <div class="card">
-      {#if loading}
+    <div class="panel">
+      <div class="env-tabs">
+        <button
+          type="button"
+          class="env-tab {activeEnv === 'dev' ? 'active' : ''}"
+          onclick={() => activeEnv = 'dev'}
+        >
+          Dev
+        </button>
+        <button
+          type="button"
+          class="env-tab {activeEnv === 'prod' ? 'active' : ''}"
+          onclick={() => activeEnv = 'prod'}
+        >
+          Prod
+        </button>
+      </div>
+
+      <div class="card">
+      {#if activeEnv === 'prod'}
+        <p class="placeholder-msg">Próximamente</p>
+      {:else if loading}
         <p class="loading-msg"><span class="spinner"></span> Cargando proyectos...</p>
       {:else if error}
         <p class="error-msg">{error}</p>
@@ -470,6 +492,7 @@
           </tbody>
         </table>
       {/if}
+      </div>
     </div>
 
     <footer>
@@ -598,8 +621,50 @@
     color: #6b7280;
   }
 
+  .panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .env-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 40px 0 16px;
+  }
+
+  .env-tab {
+    padding: 8px 20px;
+    border: 1px solid #e2e8f0;
+    border-bottom: none;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .env-tab:hover {
+    background: #e2e8f0;
+    color: #334155;
+  }
+
+  .env-tab.active {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+  }
+
   .card {
     overflow: hidden;
+  }
+
+  .placeholder-msg {
+    padding: 40px 20px;
+    color: #94a3b8;
+    font-size: 0.9rem;
   }
 
   table {
