@@ -3,6 +3,7 @@
   const APPS_URL = 'http://172.10.30.15:4174/apps.json';
   const DEPLOYS_URL = 'http://172.10.30.15:4174/logs/deploys.jsonl';
   const LOGS_BASE = 'http://172.10.30.15:4174/logs';
+  const PM2_STATUS_URL = WEBHOOK_BASE + '/hooks/pm2-status';
   const POLL_INTERVAL_MS = 4000;
   const FINISHED_TTL_MS = 10 * 60 * 1000;
 
@@ -32,6 +33,7 @@
 
   let backendDeploys = $state({}); // app -> último registro leído de deploys.jsonl
   let pollOk = $state(false); // false hasta el primer poll exitoso
+  let pm2Status = $state({}); // pm2_name -> status ('online', 'stopped', 'errored', ...)
 
   let detailDeploy = $state(null);
   let detailLogContent = $state('');
@@ -62,6 +64,7 @@
       }
       case 'webhook': return project.deploy_url ?? '';
       case 'status': return effectiveStatus(project.id).kind;
+      case 'live': return liveStatus(project) === 'online' ? 0 : 1;
       default: return '';
     }
   }
@@ -119,11 +122,32 @@
     }
   }
 
+  async function refreshPm2Status() {
+    try {
+      const res = await fetch(PM2_STATUS_URL, { cache: 'no-store' });
+      if (!res.ok) return;
+      pm2Status = await res.json();
+    } catch (_) {
+      // red caída, etc. — se mantiene el último estado conocido
+    }
+  }
+
+  function liveStatus(project) {
+    if (!project.pm2_name) return 'unknown';
+    return pm2Status[project.pm2_name] ?? 'unknown';
+  }
+
   loadProjects();
 
   $effect(() => {
     refreshDeploys();
     const id = setInterval(refreshDeploys, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  });
+
+  $effect(() => {
+    refreshPm2Status();
+    const id = setInterval(refreshPm2Status, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   });
 
@@ -298,11 +322,15 @@
               <th class="sortable" onclick={() => setSort('status')}>
                 Estado<span class="sort-arrow {sortKey === 'status' ? 'active' : ''}">{sortKey === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
+              <th class="sortable live-col" onclick={() => setSort('live')}>
+                Live<span class="sort-arrow {sortKey === 'live' ? 'active' : ''}">{sortKey === 'live' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {#each sortedProjects as project}
               {@const st = effectiveStatus(project.id)}
+              {@const live = liveStatus(project)}
               <tr>
                 <td class="project-name">{project.name}</td>
                 <td class="folder-cell">
@@ -429,6 +457,13 @@
                   {:else}
                     <span class="status idle">— Listo</span>
                   {/if}
+                </td>
+                <td class="live-cell">
+                  <span
+                    class="live-dot live-{live}"
+                    title="pm2 · {project.pm2_name}: {live}"
+                    aria-label="Estado en vivo de {project.name}: {live}"
+                  ></span>
                 </td>
               </tr>
             {/each}
@@ -858,6 +893,43 @@
   .status-cell {
     white-space: nowrap;
     min-width: 130px;
+  }
+
+  .live-col {
+    text-align: center;
+  }
+
+  .live-cell {
+    text-align: center;
+    white-space: nowrap;
+    width: 1%;
+  }
+
+  .live-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    box-shadow: 0 0 0 3px rgba(203, 213, 225, 0.25);
+  }
+
+  .live-dot.live-online {
+    background: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+    animation: pulse-live 2s ease-in-out infinite;
+  }
+
+  .live-dot.live-stopped,
+  .live-dot.live-errored,
+  .live-dot.live-stopping {
+    background: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
+  }
+
+  @keyframes pulse-live {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25); }
+    50% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.12); }
   }
 
   .status {
