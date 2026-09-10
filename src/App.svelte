@@ -31,6 +31,7 @@
   let error = $state(null);
   let hookStates = $state({}); // estado local transitorio entre el click y la próxima lectura del backend
   let preClickIds = $state({}); // rec.id que estaba en backendDeploys al hacer click; cualquier id distinto = deploy nuevo
+  let mergeStates = $state({}); // project.id -> {kind: 'loading'|'success'|'no_changes'|'error', message?, prUrl?, prNumber?}
 
   let backendDeploys = $state({}); // app -> último registro leído de deploys.jsonl
   let pollOk = $state(false); // false hasta el primer poll exitoso
@@ -257,6 +258,34 @@
     // El estado final lo marca el polling de deploys.jsonl
   }
 
+  async function triggerMerge(event, project) {
+    event.preventDefault();
+    if (!project.merge_url) return;
+    if (mergeStates[project.id]?.kind === 'loading') return;
+
+    mergeStates[project.id] = { kind: 'loading' };
+    try {
+      const res = await fetch(WEBHOOK_BASE + project.merge_url, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (data?.ok && data?.no_changes) {
+        mergeStates[project.id] = { kind: 'no_changes', message: data.message };
+      } else if (data?.ok && data?.merged) {
+        mergeStates[project.id] = { kind: 'success', prUrl: data.pr_url, prNumber: data.pr_number };
+      } else {
+        mergeStates[project.id] = {
+          kind: 'error',
+          message: data?.error ?? `HTTP ${res.status}`,
+          prUrl: data?.pr_url,
+        };
+      }
+    } catch (e) {
+      mergeStates[project.id] = { kind: 'error', message: 'Error de red' };
+    }
+    setTimeout(() => {
+      if (mergeStates[project.id]?.kind !== 'loading') delete mergeStates[project.id];
+    }, 8000);
+  }
+
   function openDetail(rec) {
     detailDeploy = rec;
     detailLogContent = '';
@@ -444,16 +473,45 @@
                   {/if}
                 </td>
                 <td class="webhook-cell">
-                  <button
-                    type="button"
-                    class="deploy-btn"
-                    onclick={(e) => triggerWebhook(e, project)}
-                    disabled={st.kind === 'loading' || st.kind === 'running'}
-                    aria-label="Desplegar {project.name}: {webhookUrl(project)}"
-                    title={webhookUrl(project)}
-                  >
-                    🚀
-                  </button>
+                  <div class="webhook-btn-group">
+                    {#if project.merge_url}
+                      {@const ms = mergeStates[project.id]}
+                      <button
+                        type="button"
+                        class="merge-btn {ms?.kind ?? ''}"
+                        onclick={(e) => triggerMerge(e, project)}
+                        disabled={ms?.kind === 'loading'}
+                        aria-label="Promover {project.name} a {project.branch}"
+                        title={ms?.kind === 'success' ? `Mergeado: PR #${ms.prNumber}` : ms?.kind === 'no_changes' ? ms.message : ms?.kind === 'error' ? ms.message : `Promover a ${project.branch}`}
+                      >
+                        {#if ms?.kind === 'loading'}
+                          <span class="spinner"></span>
+                        {:else if ms?.kind === 'success'}
+                          ✓
+                        {:else if ms?.kind === 'no_changes'}
+                          =
+                        {:else if ms?.kind === 'error'}
+                          ✗
+                        {:else}
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="18" cy="18" r="3"/>
+                            <circle cx="6" cy="6" r="3"/>
+                            <path d="M6 21V9a9 9 0 0 0 9 9"/>
+                          </svg>
+                        {/if}
+                      </button>
+                    {/if}
+                    <button
+                      type="button"
+                      class="deploy-btn"
+                      onclick={(e) => triggerWebhook(e, project)}
+                      disabled={st.kind === 'loading' || st.kind === 'running'}
+                      aria-label="Desplegar {project.name}: {webhookUrl(project)}"
+                      title={webhookUrl(project)}
+                    >
+                      🚀
+                    </button>
+                  </div>
                 </td>
                 <td class="status-cell">
                   {#if st.kind === 'loading'}
@@ -930,6 +988,12 @@
     width: 1%;
   }
 
+  .webhook-btn-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .deploy-btn {
     flex-shrink: 0;
     display: inline-flex;
@@ -960,6 +1024,62 @@
   .deploy-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .merge-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #c7d2fe;
+    background: #eef2ff;
+    color: #4338ca;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  }
+
+  .merge-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .merge-btn:hover:not(:disabled) {
+    background: #e0e7ff;
+    border-color: #4f46e5;
+    transform: scale(1.05);
+  }
+
+  .merge-btn:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .merge-btn:disabled {
+    cursor: not-allowed;
+  }
+
+  .merge-btn.success {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+    color: #15803d;
+  }
+
+  .merge-btn.no_changes {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #64748b;
+  }
+
+  .merge-btn.error {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #b91c1c;
   }
 
   .status-cell {
