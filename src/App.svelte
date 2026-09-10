@@ -23,6 +23,7 @@
     'nexus_poc_svelte': 'Nexus IA',
     'infra-timelapse': 'Prototipo',
     'shape_up': 'Prototipo',
+    'shape_up_dev': 'Prototipo',
   };
 
   let projects = $state([]);
@@ -71,9 +72,13 @@
     }
   }
 
+  const envProjects = $derived.by(() => {
+    return projects.filter((p) => (activeEnv === 'prod' ? p.env === 'prod' : p.env !== 'prod'));
+  });
+
   const sortedProjects = $derived.by(() => {
-    if (!sortKey) return projects;
-    const arr = [...projects];
+    if (!sortKey) return envProjects;
+    const arr = [...envProjects];
     arr.sort((a, b) => {
       const av = sortValue(a, sortKey);
       const bv = sortValue(b, sortKey);
@@ -308,12 +313,14 @@
       </div>
 
       <div class="card">
-      {#if activeEnv === 'prod'}
-        <p class="placeholder-msg">Próximamente</p>
-      {:else if loading}
+      {#if loading}
         <p class="loading-msg"><span class="spinner"></span> Cargando proyectos...</p>
       {:else if error}
         <p class="error-msg">{error}</p>
+      {:else if sortedProjects.length === 0}
+        <p class="placeholder-msg">
+          {activeEnv === 'prod' ? 'Aún no hay proyectos en producción' : 'No hay proyectos'}
+        </p>
       {:else}
         <table>
           <thead>
