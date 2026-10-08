@@ -176,7 +176,7 @@
 
   function publicHref(project) {
     if (!project.public_url) return null;
-    return project.stack === 'python' ? project.public_url + '/docs' : project.public_url;
+    return project.stack === 'python' ? project.public_url + (project.docs_path || '/docs') : project.public_url;
   }
 
   function appPort(project) {
