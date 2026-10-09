@@ -23,6 +23,7 @@
     'nexus_poc_svelte': 'Nexus IA',
     'nexus_back_dev': 'Nexus IA',
     'nexus_poc_svelte_dev': 'Nexus IA',
+    'nexus_monitor': 'Nexus IA',
     'infra-timelapse': 'Prototipo',
     'shape_up': 'Prototipo',
     'shape_up_dev': 'Prototipo',
