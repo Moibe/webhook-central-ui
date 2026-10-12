@@ -504,16 +504,18 @@
                         {/if}
                       </button>
                     {/if}
-                    <button
-                      type="button"
-                      class="deploy-btn"
-                      onclick={(e) => triggerWebhook(e, project)}
-                      disabled={st.kind === 'loading' || st.kind === 'running'}
-                      aria-label="Desplegar {project.name}: {webhookUrl(project)}"
-                      title={webhookUrl(project)}
-                    >
-                      🚀
-                    </button>
+                    {#if project.deploy_url}
+                      <button
+                        type="button"
+                        class="deploy-btn"
+                        onclick={(e) => triggerWebhook(e, project)}
+                        disabled={st.kind === 'loading' || st.kind === 'running'}
+                        aria-label="Desplegar {project.name}: {webhookUrl(project)}"
+                        title={webhookUrl(project)}
+                      >
+                        🚀
+                      </button>
+                    {/if}
                   </div>
                 </td>
                 <td class="status-cell">
