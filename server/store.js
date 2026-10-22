@@ -1,4 +1,4 @@
-import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { scryptSync, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +34,20 @@ function verifyPassword(password, stored) {
 const cleanTabs = (tabs) => TABS.filter((t) => Array.isArray(tabs) && tabs.includes(t));
 
 export function publicUser(u) {
-  return { username: u.username, role: u.role, tabs: u.role === 'superadmin' ? [...TABS] : u.tabs };
+  return {
+    username: u.username,
+    role: u.role,
+    tabs: u.role === 'superadmin' ? [...TABS] : u.tabs,
+    must_change: !!u.must_change,
+  };
+}
+
+// Sin caracteres ambiguos (0/o, 1/l/i) para que se pueda dictar sin errores
+const TEMP_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+const tempPassword = () => Array.from({ length: 5 }, () => TEMP_ALPHABET[randomInt(TEMP_ALPHABET.length)]).join('');
+
+function dropSessions(db, username, except) {
+  for (const [t, s] of Object.entries(db.sessions)) if (s.username === username && t !== except) delete db.sessions[t];
 }
 
 export function upsertSuperadmin(username, password) {
@@ -85,30 +98,51 @@ export function destroySession(token) {
   }
 }
 
-export const listUsers = () => Object.values(load().users).map(publicUser);
+// Solo el superadmin ve la contraseña, y únicamente la temporal: al cambiarla se borra y queda el hash
+export const listUsers = () =>
+  Object.values(load().users).map((u) => ({ ...publicUser(u), temp_password: u.must_change ? u.temp_password : null }));
 
-export function createUser({ username, password, tabs }) {
+export function createUser({ username, tabs }) {
   const db = load();
   if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username ?? '')) throw new Error('Usuario inválido (3-32: letras, números, . _ -)');
-  if (typeof password !== 'string' || password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres');
   if (db.users[username]) throw new Error('Ese usuario ya existe');
+  const temp = tempPassword();
   db.users[username] = {
-    username, hash: hashPassword(password), role: 'user', tabs: cleanTabs(tabs), created_at: new Date().toISOString(),
+    username, hash: hashPassword(temp), temp_password: temp, must_change: true,
+    role: 'user', tabs: cleanTabs(tabs), created_at: new Date().toISOString(),
   };
   save(db);
+  return temp;
 }
 
-export function updateUser(username, { password, tabs }) {
+export function updateUser(username, { reset, tabs }) {
   const db = load();
   const u = db.users[username];
   if (!u) throw new Error('Usuario no encontrado');
   if (u.role === 'superadmin') throw new Error('El superadmin no se edita desde la UI');
   if (tabs !== undefined) u.tabs = cleanTabs(tabs);
-  if (password !== undefined) {
-    if (typeof password !== 'string' || password.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres');
-    u.hash = hashPassword(password);
-    for (const [t, s] of Object.entries(db.sessions)) if (s.username === username) delete db.sessions[t];
+  let temp = null;
+  if (reset) {
+    temp = tempPassword();
+    u.hash = hashPassword(temp);
+    u.temp_password = temp;
+    u.must_change = true;
+    dropSessions(db, username);
   }
+  save(db);
+  return temp;
+}
+
+export function changePassword(username, current, next, sessionToken) {
+  const db = load();
+  const u = db.users[username];
+  if (!u || !verifyPassword(current ?? '', u.hash)) throw new Error('La contraseña actual no es correcta');
+  if (typeof next !== 'string' || next.length < 8) throw new Error('La nueva contraseña debe tener al menos 8 caracteres');
+  if (next === current) throw new Error('La nueva contraseña debe ser distinta');
+  u.hash = hashPassword(next);
+  u.must_change = false;
+  delete u.temp_password;
+  dropSessions(db, username, sessionToken);
   save(db);
 }
 

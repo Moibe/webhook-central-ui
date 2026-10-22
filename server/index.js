@@ -87,6 +87,19 @@ async function handleApi(req, res, url) {
 
   if (path === '/api/me') return send(res, 200, { user: store.publicUser(user) });
 
+  if (path === '/api/password' && req.method === 'POST') {
+    const { current, next } = await readBody(req);
+    try {
+      store.changePassword(user.username, current, next, token);
+      return send(res, 200, { user: store.publicUser(store.userForSession(token)) });
+    } catch (e) {
+      return send(res, 400, { error: e.message });
+    }
+  }
+
+  // Con contraseña temporal solo se puede cambiarla (o salir)
+  if (user.must_change) return send(res, 403, { error: 'Debes cambiar tu contraseña', must_change: true });
+
   if (path === '/api/apps') return send(res, 200, await allowedApps(user));
 
   if (path === '/api/deploys') {
@@ -114,8 +127,12 @@ async function handleApi(req, res, url) {
     const name = decodeURIComponent(path.slice('/api/users/'.length));
     try {
       if (path === '/api/users' && req.method === 'GET') return send(res, 200, store.listUsers());
-      if (path === '/api/users' && req.method === 'POST') { store.createUser(await readBody(req)); return send(res, 201, { ok: true }); }
-      if (name && req.method === 'PATCH') { store.updateUser(name, await readBody(req)); return send(res, 200, { ok: true }); }
+      if (path === '/api/users' && req.method === 'POST') {
+        return send(res, 201, { ok: true, temp_password: store.createUser(await readBody(req)) });
+      }
+      if (name && req.method === 'PATCH') {
+        return send(res, 200, { ok: true, temp_password: store.updateUser(name, await readBody(req)) });
+      }
       if (name && req.method === 'DELETE') { store.deleteUser(name); return send(res, 200, { ok: true }); }
     } catch (e) {
       return send(res, 400, { error: e.message });

@@ -5,7 +5,9 @@
 
   let users = $state([]);
   let error = $state('');
-  let newUser = $state({ username: '', password: '', tabs: ['dev'] });
+  let newUser = $state({ username: '', tabs: ['dev'] });
+  let revealed = $state({}); // username -> true si el ojito está abierto
+  let justIssued = $state(null); // { username, password } recién generada, para copiarla
 
   async function api(path, method = 'GET', body) {
     const res = await fetch(path, {
@@ -39,15 +41,20 @@
   const toggle = (tabs, t) => (tabs.includes(t) ? tabs.filter((x) => x !== t) : [...tabs, t]);
 
   const addUser = () => run(async () => {
-    await api('/api/users', 'POST', newUser);
-    newUser = { username: '', password: '', tabs: ['dev'] };
+    const { temp_password } = await api('/api/users', 'POST', newUser);
+    justIssued = { username: newUser.username, password: temp_password };
+    newUser = { username: '', tabs: ['dev'] };
   });
 
   const setTabs = (u, t) => run(() => api(`/api/users/${encodeURIComponent(u.username)}`, 'PATCH', { tabs: toggle(u.tabs, t) }));
 
   const resetPassword = (u) => {
-    const password = prompt(`Nueva contraseña para ${u.username} (mín. 8):`);
-    if (password) run(() => api(`/api/users/${encodeURIComponent(u.username)}`, 'PATCH', { password }));
+    if (!confirm(`¿Generar una contraseña temporal nueva para ${u.username}? Se cerrará su sesión.`)) return;
+    run(async () => {
+      const { temp_password } = await api(`/api/users/${encodeURIComponent(u.username)}`, 'PATCH', { reset: true });
+      justIssued = { username: u.username, password: temp_password };
+      revealed[u.username] = true;
+    });
   };
 
   const removeUser = (u) => {
@@ -65,9 +72,15 @@
     </header>
 
     {#if error}<p class="err">✗ {error}</p>{/if}
+    {#if justIssued}
+      <p class="issued">
+        Contraseña temporal de <strong>{justIssued.username}</strong>: <code>{justIssued.password}</code>
+        <button type="button" onclick={() => navigator.clipboard?.writeText(justIssued.password)}>Copiar</button>
+      </p>
+    {/if}
 
     <table>
-      <thead><tr><th>Usuario</th>{#each TABS as [, label]}<th>{label}</th>{/each}<th></th></tr></thead>
+      <thead><tr><th>Usuario</th>{#each TABS as [, label]}<th>{label}</th>{/each}<th>Contraseña</th><th></th></tr></thead>
       <tbody>
         {#each users as u (u.username)}
           <tr>
@@ -77,9 +90,21 @@
                 <input type="checkbox" checked={u.tabs.includes(t)} disabled={u.role === 'superadmin'} onchange={() => setTabs(u, t)} />
               </td>
             {/each}
+            <td class="pass">
+              {#if u.role === 'superadmin'}
+                <span class="muted">—</span>
+              {:else if u.temp_password}
+                <code>{revealed[u.username] ? u.temp_password : '•••••'}</code>
+                <button type="button" class="eye" aria-label={revealed[u.username] ? 'Ocultar' : 'Ver'} onclick={() => (revealed[u.username] = !revealed[u.username])}>
+                  {revealed[u.username] ? '🙈' : '👁'}
+                </button>
+              {:else}
+                <span class="muted" title="El usuario ya definió la suya; solo se guarda su hash">propia</span>
+              {/if}
+            </td>
             <td class="actions">
               {#if u.role !== 'superadmin'}
-                <button type="button" onclick={() => resetPassword(u)}>Contraseña</button>
+                <button type="button" onclick={() => resetPassword(u)}>Restablecer</button>
                 <button type="button" class="danger" onclick={() => removeUser(u)}>Borrar</button>
               {/if}
             </td>
@@ -91,11 +116,11 @@
     <h4>Nuevo usuario</h4>
     <form class="new" onsubmit={(e) => { e.preventDefault(); addUser(); }}>
       <input placeholder="usuario" autocomplete="off" bind:value={newUser.username} required />
-      <input placeholder="contraseña (mín. 8)" type="password" autocomplete="new-password" bind:value={newUser.password} required />
       {#each TABS as [t, label]}
         <label><input type="checkbox" checked={newUser.tabs.includes(t)} onchange={() => (newUser.tabs = toggle(newUser.tabs, t))} /> {label}</label>
       {/each}
       <button type="submit">Crear</button>
+      <span class="muted">Se genera una contraseña temporal de 5 caracteres.</span>
     </form>
   </div>
 </div>
@@ -122,5 +147,9 @@
   button.danger { color: #b91c1c; border-color: #f0c4c4; }
   .new { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.85rem; }
   .new input:not([type='checkbox']) { padding: 6px 9px; border: 1px solid #c8d8ea; border-radius: 6px; }
+  .pass code, .issued code { font-family: ui-monospace, Consolas, monospace; background: #eef5ff; padding: 2px 6px; border-radius: 4px; }
+  .eye { border: 0; background: none; font-size: 0.95rem; padding: 0 4px; }
+  .muted { color: #8aa0b8; font-size: 0.8rem; }
+  .issued { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; font-size: 0.88rem; color: #166534; }
   .err { color: #b91c1c; font-size: 0.85rem; margin-bottom: 8px; }
 </style>
