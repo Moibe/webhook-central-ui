@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "postbuild": "ln -sf /home/mbriseno/webhook-central/apps.json dist/apps.json && ln -sf /home/mbriseno/webhook-central/logs dist/logs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server/index.js",
+    "create-admin": "node server/create-admin.js"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",

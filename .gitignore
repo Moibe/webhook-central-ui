@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Token del hook power (build-time, no subir)
+.env
+.env.local
+
+# Usuarios y sesiones del auth (hashes)
+data/
