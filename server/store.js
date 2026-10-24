@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DATA_FILE = process.env.DATA_FILE ?? resolve(HERE, '../data/users.json');
-export const TABS = ['dev', 'prod', 'open'];
+export const TABS = ['dev', 'stage', 'prod'];
 
 function load() {
   if (!existsSync(DATA_FILE)) return { users: {}, sessions: {} };
@@ -31,13 +31,13 @@ function verifyPassword(password, stored) {
   return timingSafeEqual(actual, expected);
 }
 
-const cleanTabs = (tabs) => TABS.filter((t) => Array.isArray(tabs) && tabs.includes(t));
-
 export function publicUser(u) {
   return {
     username: u.username,
     role: u.role,
-    tabs: u.role === 'superadmin' ? [...TABS] : u.tabs,
+    email: u.email ?? '',
+    phone: u.phone ?? '',
+    tabs: [...TABS], // todos ven las pestañas; la visibilidad de apps depende del owner
     must_change: !!u.must_change,
   };
 }
@@ -57,14 +57,17 @@ export function upsertSuperadmin(username, password) {
     username,
     hash: hashPassword(password),
     role: 'superadmin',
-    tabs: [...TABS],
     created_at: db.users[username]?.created_at ?? new Date().toISOString(),
   };
   save(db);
 }
 
+// El login no distingue mayúsculas: "moibe" entra como "Moibe"
+const findUser = (db, username) =>
+  db.users[username] ?? Object.values(db.users).find((u) => u.username.toLowerCase() === String(username).toLowerCase());
+
 export function authenticate(username, password) {
-  const u = load().users[username];
+  const u = findUser(load(), username);
   // Verificar siempre un hash para no filtrar por tiempo si el usuario existe
   const ok = verifyPassword(password, u?.hash ?? hashPassword('dummy'));
   return u && ok ? u : null;
@@ -87,7 +90,7 @@ export function userForSession(token) {
   const db = load();
   const s = db.sessions[token];
   if (!s || s.expires < Date.now()) return null;
-  return db.users[s.username] ?? null; // permisos siempre frescos: editar tabs aplica de inmediato
+  return db.users[s.username] ?? null; // permisos siempre frescos
 }
 
 export function destroySession(token) {
@@ -102,25 +105,38 @@ export function destroySession(token) {
 export const listUsers = () =>
   Object.values(load().users).map((u) => ({ ...publicUser(u), temp_password: u.must_change ? u.temp_password : null }));
 
-export function createUser({ username, tabs }) {
+// Opcionales: vacío los borra
+function cleanContact(email, phone) {
+  const e = String(email ?? '').trim();
+  const p = String(phone ?? '').trim();
+  if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw new Error('Correo inválido');
+  if (p && !/^\+?[0-9 ()-]{7,20}$/.test(p)) throw new Error('Celular inválido (7-20 dígitos, puede llevar + espacios - ( ))');
+  return { email: e, phone: p };
+}
+
+export function createUser({ username, email, phone }) {
   const db = load();
   if (!/^[a-zA-Z0-9._-]{3,32}$/.test(username ?? '')) throw new Error('Usuario inválido (3-32: letras, números, . _ -)');
-  if (db.users[username]) throw new Error('Ese usuario ya existe');
+  if (findUser(db, username)) throw new Error('Ese usuario ya existe');
+  const contact = cleanContact(email, phone);
   const temp = tempPassword();
   db.users[username] = {
+    ...contact,
     username, hash: hashPassword(temp), temp_password: temp, must_change: true,
-    role: 'user', tabs: cleanTabs(tabs), created_at: new Date().toISOString(),
+    role: 'user', created_at: new Date().toISOString(),
   };
   save(db);
   return temp;
 }
 
-export function updateUser(username, { reset, tabs }) {
+export function updateUser(username, { reset, email, phone }) {
   const db = load();
   const u = db.users[username];
   if (!u) throw new Error('Usuario no encontrado');
-  if (u.role === 'superadmin') throw new Error('El superadmin no se edita desde la UI');
-  if (tabs !== undefined) u.tabs = cleanTabs(tabs);
+  if (u.role === 'superadmin' && reset) throw new Error('La contraseña del superadmin no se restablece desde la UI');
+  if (email !== undefined || phone !== undefined) {
+    Object.assign(u, cleanContact(email ?? u.email, phone ?? u.phone));
+  }
   let temp = null;
   if (reset) {
     temp = tempPassword();

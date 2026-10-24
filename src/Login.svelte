@@ -29,8 +29,8 @@
 
 <div class="login-wrap">
   <form class="login-card" onsubmit={submit}>
-    <h1>Buzzword IA DevOps</h1>
-    <p>Inicia sesión para continuar</p>
+    <h1>Iniciar sesión</h1>
+    <p>Ingresa tus credenciales para continuar</p>
     <label for="login-user">Usuario</label>
     <input id="login-user" type="text" autocomplete="username" bind:value={username} required />
     <label for="login-pass">Contraseña</label>
@@ -42,7 +42,7 @@
 
 <style>
   .login-wrap {
-    min-height: 100vh;
+    min-height: calc(100vh - 65px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -57,31 +57,31 @@
     gap: 8px;
     padding: 28px;
     background: #fff;
-    border-radius: 12px;
+    border-radius: 14px;
     box-shadow: 0 10px 25px rgba(26, 58, 92, 0.12);
   }
 
   h1 {
     font-size: 1.4rem;
-    color: #1a3a5c;
+    color: var(--foreground);
   }
 
   p {
-    color: #5a7a9a;
+    color: var(--muted-foreground);
     font-size: 0.9rem;
     margin-bottom: 8px;
   }
 
   label {
     font-size: 0.82rem;
-    color: #1a3a5c;
+    color: var(--foreground);
     font-weight: 600;
   }
 
   input {
     padding: 9px 11px;
-    border: 1px solid #c8d8ea;
-    border-radius: 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
     font-size: 0.95rem;
   }
 
@@ -89,8 +89,8 @@
     margin-top: 12px;
     padding: 10px;
     border: 0;
-    border-radius: 6px;
-    background: #2563eb;
+    border-radius: 8px;
+    background: var(--primary);
     color: #fff;
     font-size: 0.95rem;
     cursor: pointer;
@@ -102,7 +102,7 @@
   }
 
   .login-error {
-    color: #b91c1c;
+    color: var(--destructive);
     margin: 0;
   }
 </style>

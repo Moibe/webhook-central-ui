@@ -16,7 +16,6 @@ const MIME = {
   '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.ico': 'image/x-icon',
 };
 
-const tabOf = (app) => (app.env === 'prod' || app.env === 'open' ? app.env : 'dev');
 
 function send(res, status, body, headers = {}) {
   const isJson = typeof body === 'object' && !Buffer.isBuffer(body);
@@ -56,7 +55,7 @@ function tooManyFailures(ip) {
 
 async function allowedApps(user) {
   const apps = JSON.parse(await readFile(APPS_FILE, 'utf8'));
-  return apps.filter((a) => user.role === 'superadmin' || user.tabs.includes(tabOf(a)));
+  return apps.filter((a) => user.role === 'superadmin' || a.owner?.toLowerCase() === user.username.toLowerCase());
 }
 
 async function handleApi(req, res, url) {

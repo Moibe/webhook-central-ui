@@ -1,5 +1,4 @@
 <script>
-  import Users from './Users.svelte';
 
   let { user, onLogout } = $props();
 
@@ -7,7 +6,7 @@
   const APPS_URL = '/api/apps';
   const DEPLOYS_URL = '/api/deploys';
   const LOGS_BASE = '/api/logs';
-  const ENV_LABELS = { dev: 'Dev', prod: 'Prod', open: 'Open' };
+  const ENV_LABELS = { dev: 'Dev', stage: 'Stage', prod: 'Prod' };
   const PM2_STATUS_URL = WEBHOOK_BASE + '/hooks/pm2-status';
   const POWER_URL = WEBHOOK_BASE + '/hooks/power';
   const POWER_TOKEN = import.meta.env.VITE_POWER_TOKEN ?? '';
@@ -63,7 +62,6 @@
 
   const isSuper = user.role === 'superadmin';
   let activeEnv = $state(user.tabs[0] ?? 'dev');
-  let showUsers = $state(false);
 
   function setSort(key) {
     if (sortKey === key) {
@@ -78,6 +76,7 @@
     switch (key) {
       case 'name': return (project.name ?? '').toLowerCase();
       case 'project': return (PROJECT_BY_APP[project.id] ?? '￿').toLowerCase();
+      case 'owner': return (project.owner ?? '￿').toLowerCase();
       case 'stack': return project.stack ?? '';
       case 'branch': return project.branch ?? '';
       case 'type': return project.stack === 'python' ? 'api' : 'webapp';
@@ -94,7 +93,7 @@
 
   const envProjects = $derived.by(() => {
     return projects.filter((p) =>
-      activeEnv === 'dev' ? p.env !== 'prod' && p.env !== 'open' : p.env === activeEnv
+      activeEnv === 'dev' ? p.env !== 'stage' && p.env !== 'prod' : p.env === activeEnv
     );
   });
 
@@ -384,28 +383,17 @@
 
 <div class="app">
   <div class="container">
-    <header>
-      <h1>Buzzword IA DevOps</h1>
-      <div class="user-bar">
-        <span class="user-name">{user.username}{isSuper ? ' · superadmin' : ''}</span>
-        {#if isSuper}
-          <button type="button" class="btn-user" onclick={() => showUsers = true}>Usuarios</button>
-        {/if}
-        <button type="button" class="btn-user" onclick={() => onLogout(true)}>Salir</button>
-      </div>
-      <p>Panel de despliegue de servicios{pollOk ? '' : ' · sin telemetría aún'}</p>
-    </header>
 
     {#if user.tabs.length === 0}
       <p class="placeholder-msg">Tu usuario aún no tiene pestañas asignadas. Pídele acceso al superadmin.</p>
     {:else}
 
-    <div class="panel">
+    <div class="panel env-{activeEnv}">
       <div class="env-tabs">
         {#each user.tabs as env (env)}
           <button
             type="button"
-            class="env-tab {activeEnv === env ? 'active' : ''}"
+            class="env-tab env-{env} {activeEnv === env ? 'active' : ''}"
             onclick={() => activeEnv = env}
           >
             {ENV_LABELS[env]}
@@ -418,10 +406,6 @@
         <p class="loading-msg"><span class="spinner"></span> Cargando proyectos...</p>
       {:else if error}
         <p class="error-msg">{error}</p>
-      {:else if sortedProjects.length === 0}
-        <p class="placeholder-msg">
-          {activeEnv === 'prod' ? 'Aún no hay proyectos en producción' : activeEnv === 'open' ? 'Aún no hay proyectos en Open' : 'No hay proyectos'}
-        </p>
       {:else}
         <table>
           <thead>
@@ -432,6 +416,9 @@
               <th class="folder-col">Origen</th>
               <th class="sortable" onclick={() => setSort('project')}>
                 Proyecto<span class="sort-arrow {sortKey === 'project' ? 'active' : ''}">{sortKey === 'project' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
+              </th>
+              <th class="sortable" onclick={() => setSort('owner')}>
+                Owner<span class="sort-arrow {sortKey === 'owner' ? 'active' : ''}">{sortKey === 'owner' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
               </th>
               <th class="sortable" onclick={() => setSort('stack')}>
                 Stack<span class="sort-arrow {sortKey === 'stack' ? 'active' : ''}">{sortKey === 'stack' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
@@ -491,6 +478,13 @@
                 <td class="project-group">
                   {#if PROJECT_BY_APP[project.id]}
                     {PROJECT_BY_APP[project.id]}
+                  {:else}
+                    <span class="muted">—</span>
+                  {/if}
+                </td>
+                <td class="owner-cell">
+                  {#if project.owner}
+                    {project.owner}
                   {:else}
                     <span class="muted">—</span>
                   {/if}
@@ -637,6 +631,12 @@
                   {/if}
                 </td>
               </tr>
+            {:else}
+              <tr class="empty-row">
+                <td colspan="12" class="placeholder-msg">
+                  {activeEnv === 'stage' ? 'Aún no hay proyectos en Stage' : activeEnv === 'prod' ? 'Aún no hay proyectos en producción' : 'No hay proyectos'}
+                </td>
+              </tr>
             {/each}
           </tbody>
         </table>
@@ -650,10 +650,6 @@
       <p>Flujo: <span class="flow">git pull → dependencias → pm2 restart</span></p>
     </footer>
   </div>
-
-  {#if showUsers}
-    <Users onClose={() => showUsers = false} />
-  {/if}
 
   {#if powerTarget}
     {@const pp = powerTarget.project}
@@ -773,40 +769,13 @@
   :global(html, body) {
     width: 100%;
     height: 100%;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-family: var(--font-sans);
   }
 
   .app {
     width: 100%;
     min-height: 100vh;
-    padding: 48px 0;
-  }
-
-  .user-bar {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-basis: auto;
-  }
-
-  .user-name {
-    color: #5a7a9a;
-    font-size: 0.85rem;
-  }
-
-  .btn-user {
-    padding: 5px 12px;
-    border: 1px solid #c8d8ea;
-    border-radius: 6px;
-    background: #fff;
-    color: #1a3a5c;
-    font-size: 0.82rem;
-    cursor: pointer;
-  }
-
-  .btn-user:hover {
-    background: #eef5ff;
+    padding: 12px 0 48px;
   }
 
   .container {
@@ -825,16 +794,8 @@
     flex-wrap: wrap;
   }
 
-  h1 {
-    font-size: 1.8rem;
-    font-weight: 700;
-    color: #1a3a5c;
-    letter-spacing: -0.5px;
-    margin: 0;
-  }
-
   header p {
-    color: #5a7a9a;
+    color: var(--muted-foreground);
     margin: 0;
     margin-left: 12px;
     flex-basis: 100%;
@@ -850,11 +811,11 @@
   }
 
   .loading-msg {
-    color: #2563eb;
+    color: var(--primary);
   }
 
   .error-msg {
-    color: #b91c1c;
+    color: var(--destructive);
   }
 
   .branch {
@@ -868,6 +829,11 @@
     flex-direction: column;
   }
 
+  /* Color por entorno: pestaña y header de la tabla comparten tono */
+  .env-dev   { --env-main: var(--primary); --env-light: #8da2fb; }
+  .env-stage { --env-main: #d97706; --env-light: #fbbf24; }
+  .env-prod  { --env-main: #059669; --env-light: #34d399; }
+
   .env-tabs {
     display: flex;
     gap: 4px;
@@ -876,9 +842,9 @@
 
   .env-tab {
     padding: 8px 20px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--border);
     border-bottom: none;
-    background: #f1f5f9;
+    background: var(--muted);
     color: #64748b;
     font-size: 0.85rem;
     font-weight: 600;
@@ -889,18 +855,26 @@
   }
 
   .env-tab:hover {
-    background: #e2e8f0;
+    background: var(--border);
     color: #334155;
   }
 
   .env-tab.active {
-    background: #2563eb;
+    background: var(--env-main);
     color: #fff;
-    border-color: #2563eb;
+    border-color: var(--env-main);
+  }
+
+  .env-tab {
+    border-top: 3px solid var(--env-main);
   }
 
   .card {
     overflow: hidden;
+  }
+
+  td.placeholder-msg {
+    text-align: center;
   }
 
   .placeholder-msg {
@@ -916,7 +890,7 @@
   }
 
   thead tr {
-    background: linear-gradient(90deg, #2563eb, #38bdf8);
+    background: linear-gradient(90deg, var(--env-main), var(--env-light));
   }
 
   th {
@@ -958,6 +932,10 @@
     background: rgba(37, 99, 235, 0.04);
   }
 
+  tbody tr.empty-row:hover {
+    background: none;
+  }
+
   td {
     padding: 16px 20px;
     vertical-align: middle;
@@ -975,6 +953,7 @@
     text-align: left;
   }
 
+  .owner-cell,
   .project-group {
     font-weight: 500;
     color: #475569;
@@ -1008,7 +987,7 @@
   }
 
   .badge-config {
-    background: #e2e8f0;
+    background: var(--border);
     color: #475569;
     border: 1px solid #cbd5e1;
   }
@@ -1036,7 +1015,7 @@
     color: #d97706;
     border: 1px solid #fde68a;
     background: #fffbeb;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: help;
     transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
   }
@@ -1063,7 +1042,7 @@
     color: #24292f;
     border: 1px solid #d0d7de;
     background: #f6f8fa;
-    border-radius: 6px;
+    border-radius: 8px;
     transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
   }
 
@@ -1098,7 +1077,7 @@
     color: #7c3aed;
     border: 1px solid #ddd6fe;
     background: #f5f3ff;
-    border-radius: 6px;
+    border-radius: 8px;
     text-decoration: none;
     transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
   }
@@ -1149,10 +1128,10 @@
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 0.82rem;
     color: #475569;
-    background: #f1f5f9;
+    background: var(--muted);
     padding: 3px 10px;
-    border-radius: 6px;
-    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    border: 1px solid var(--border);
   }
 
   .webhook-col {
@@ -1190,7 +1169,7 @@
 
   .deploy-btn:hover:not(:disabled) {
     background: #dbeafe;
-    border-color: #2563eb;
+    border-color: var(--primary);
     transform: scale(1.05);
   }
 
@@ -1248,7 +1227,7 @@
   }
 
   .merge-btn.no_changes {
-    background: #f1f5f9;
+    background: var(--muted);
     border-color: #cbd5e1;
     color: #64748b;
   }
@@ -1256,7 +1235,7 @@
   .merge-btn.error {
     background: #fef2f2;
     border-color: #fecaca;
-    color: #b91c1c;
+    color: var(--destructive);
   }
 
   .status-cell {
@@ -1296,7 +1275,7 @@
     width: 14px;
     height: 14px;
     background: #bfdbfe;
-    border: 2px solid #1d4ed8;
+    border: 2px solid var(--primary-hover);
     box-shadow: 0 0 0 4px rgba(147, 197, 253, 0.55);
     animation: none;
   }
@@ -1332,13 +1311,13 @@
     width: 100%;
     padding: 8px 10px;
     border: 1px solid #cbd5e1;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.9rem;
     margin-bottom: 12px;
   }
 
   .power-error {
-    color: #b91c1c;
+    color: var(--destructive);
     font-size: 0.85rem;
     margin-bottom: 12px;
   }
@@ -1353,7 +1332,7 @@
   .btn-power-cancel,
   .btn-power-confirm {
     padding: 8px 16px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 0.88rem;
     font-weight: 600;
     cursor: pointer;
@@ -1363,8 +1342,8 @@
   }
 
   .btn-power-confirm {
-    background: #1d4ed8;
-    border-color: #1d4ed8;
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
     color: #fff;
   }
 
@@ -1394,7 +1373,7 @@
   }
 
   .status.loading {
-    color: #2563eb;
+    color: var(--primary);
     background: #eff6ff;
     border: 1px solid #bfdbfe;
   }
@@ -1407,12 +1386,12 @@
 
   .status.no-changes {
     color: #64748b;
-    background: #f1f5f9;
+    background: var(--muted);
     border: 1px solid #cbd5e1;
   }
 
   .status.error {
-    color: #b91c1c;
+    color: var(--destructive);
     background: #fef2f2;
     border: 1px solid #fecaca;
   }
@@ -1430,7 +1409,7 @@
     width: 13px;
     height: 13px;
     border: 2px solid #bfdbfe;
-    border-top-color: #2563eb;
+    border-top-color: var(--primary);
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
     flex-shrink: 0;
@@ -1482,7 +1461,7 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 16px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--border);
     padding: 0 0 12px 0;
     background: transparent;
   }
@@ -1490,7 +1469,7 @@
   .modal-header h3 {
     margin: 0;
     font-size: 1.05rem;
-    color: #1a3a5c;
+    color: var(--foreground);
     font-family: 'Consolas', 'Courier New', monospace;
     display: flex;
     align-items: center;
@@ -1500,7 +1479,7 @@
   .status-tag {
     font-size: 0.7rem;
     padding: 2px 8px;
-    border-radius: 12px;
+    border-radius: 14px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-family: inherit;
@@ -1514,7 +1493,7 @@
 
   .status-tag.failed {
     background: #fef2f2;
-    color: #b91c1c;
+    color: var(--destructive);
     border: 1px solid #fecaca;
   }
 
@@ -1530,7 +1509,7 @@
   }
 
   .modal-close:hover {
-    background: #f1f5f9;
+    background: var(--muted);
   }
 
   .modal-meta {
@@ -1553,9 +1532,9 @@
 
   .error-tail, .full-log {
     background: #0f172a;
-    color: #e2e8f0;
+    color: var(--border);
     padding: 12px 16px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 0.78rem;
     line-height: 1.45;
@@ -1574,17 +1553,17 @@
   }
 
   .btn-load-log {
-    background: #2563eb;
+    background: var(--primary);
     color: #fff;
     border: none;
     padding: 8px 16px;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 500;
   }
 
   .btn-load-log:hover {
-    background: #1d4ed8;
+    background: var(--primary-hover);
   }
 </style>
