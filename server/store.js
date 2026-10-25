@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DATA_FILE = process.env.DATA_FILE ?? resolve(HERE, '../data/users.json');
-export const TABS = ['dev', 'stage', 'prod'];
+export const TABS = ['dev', 'staging', 'prod'];
 
 function load() {
   if (!existsSync(DATA_FILE)) return { users: {}, sessions: {} };

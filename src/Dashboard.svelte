@@ -6,7 +6,7 @@
   const APPS_URL = '/api/apps';
   const DEPLOYS_URL = '/api/deploys';
   const LOGS_BASE = '/api/logs';
-  const ENV_LABELS = { dev: 'Dev', stage: 'Stage', prod: 'Prod' };
+  const ENV_LABELS = { dev: 'Dev', staging: 'Staging', prod: 'Prod' };
   const PM2_STATUS_URL = WEBHOOK_BASE + '/hooks/pm2-status';
   const POWER_URL = WEBHOOK_BASE + '/hooks/power';
   const POWER_TOKEN = import.meta.env.VITE_POWER_TOKEN ?? '';
@@ -93,7 +93,7 @@
 
   const envProjects = $derived.by(() => {
     return projects.filter((p) =>
-      activeEnv === 'dev' ? p.env !== 'stage' && p.env !== 'prod' : p.env === activeEnv
+      activeEnv === 'dev' ? p.env !== 'staging' && p.env !== 'prod' : p.env === activeEnv
     );
   });
 
@@ -634,7 +634,7 @@
             {:else}
               <tr class="empty-row">
                 <td colspan="12" class="placeholder-msg">
-                  {activeEnv === 'stage' ? 'Aún no hay proyectos en Stage' : activeEnv === 'prod' ? 'Aún no hay proyectos en producción' : 'No hay proyectos'}
+                  {activeEnv === 'staging' ? 'Aún no hay proyectos en Staging' : activeEnv === 'prod' ? 'Aún no hay proyectos en producción' : 'No hay proyectos'}
                 </td>
               </tr>
             {/each}
@@ -831,7 +831,7 @@
 
   /* Color por entorno: pestaña y header de la tabla comparten tono */
   .env-dev   { --env-main: var(--primary); --env-light: #8da2fb; }
-  .env-stage { --env-main: #d97706; --env-light: #fbbf24; }
+  .env-staging { --env-main: #d97706; --env-light: #fbbf24; }
   .env-prod  { --env-main: #059669; --env-light: #34d399; }
 
   .env-tabs {
