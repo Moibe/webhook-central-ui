@@ -27,14 +27,22 @@
     'constructor-agente-rag': 'Buzzword Agentes',
     'buzzword-agentes-ui': 'Buzzword Agentes',
     'host-asistentes': 'Buzzword Agentes',
+    'constructor-agente-rag-dev': 'Buzzword Agentes',
+    'buzzword-agentes-ui-dev': 'Buzzword Agentes',
+    'host-asistentes-dev': 'Buzzword Agentes',
     'nexus_back': 'Biblioratum',
     'nexus_poc_svelte': 'Biblioratum',
     'nexus_back_dev': 'Biblioratum',
     'nexus_poc_svelte_dev': 'Biblioratum',
     'nexus_monitor': 'Biblioratum',
+    'nexus_back_staging': 'Biblioratum',
+    'nexus_poc_svelte_staging': 'Biblioratum',
     'infra-timelapse': 'Prototipo',
     'shape_up': 'Prototipo',
     'shape_up_dev': 'Prototipo',
+    'inventario-ti': 'Infra',
+    'santander_ia_dev': 'Santander',
+    'santander_ia': 'Santander',
   };
 
   let projects = $state([]);
