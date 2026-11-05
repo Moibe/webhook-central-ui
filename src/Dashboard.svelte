@@ -53,6 +53,16 @@
   let powerBusy = $state(false);
   let powerError = $state('');
 
+  // Refrescar una app dev con los datos de prod (refresh.sh): confirmar → lanzar →
+  // seguir la corrida por el mismo polling de deploys.jsonl ("kind": "refresh").
+  let refreshTarget = $state(null);
+  let refreshTyped = $state('');
+  let refreshPhase = $state('confirm'); // 'confirm' | 'sending' | 'running'
+  let refreshRunId = $state(null);
+  let refreshError = $state('');
+  let refreshInput = $state();
+  let refreshDialog = $state();
+
   let detailDeploy = $state(null);
   let detailLogContent = $state('');
   let detailLogLoading = $state(false);
@@ -208,6 +218,64 @@
       powerError = 'Error de red';
     }
     powerBusy = false;
+  }
+
+  function canRefresh(project) {
+    return isSuper && !!project.refresh_url && !!POWER_TOKEN && project.env === 'dev';
+  }
+
+  function openRefresh(project) {
+    refreshTarget = project;
+    refreshTyped = '';
+    refreshPhase = 'confirm';
+    refreshRunId = null;
+    refreshError = '';
+  }
+
+  function closeRefresh() {
+    if (refreshPhase === 'sending') return;
+    refreshTarget = null;
+  }
+
+  async function confirmRefresh() {
+    const project = refreshTarget;
+    if (!project || refreshPhase !== 'confirm' || refreshTyped !== project.id) return;
+    refreshPhase = 'sending';
+    refreshError = '';
+    try {
+      const qs = new URLSearchParams({ token: POWER_TOKEN });
+      const res = await fetch(`${WEBHOOK_BASE}${project.refresh_url}?${qs}`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (data?.ok && data.run_id) {
+        refreshRunId = data.run_id;
+        refreshPhase = 'running';
+        refreshDeploys();
+      } else {
+        refreshError = data?.error ?? `HTTP ${res.status}`;
+        refreshPhase = 'confirm';
+      }
+    } catch (_) {
+      refreshError = 'Error de red';
+      refreshPhase = 'confirm';
+    }
+  }
+
+  // Registro de la corrida lanzada desde el modal (started → finished)
+  const refreshRec = $derived.by(() => {
+    if (!refreshTarget || !refreshRunId) return null;
+    const rec = backendDeploys[refreshTarget.id];
+    return rec?.id === refreshRunId ? rec : null;
+  });
+
+  $effect(() => {
+    if (refreshTarget && refreshPhase === 'confirm') refreshInput?.focus();
+    // Al lanzar, el campo desaparece: el foco pasa al diálogo para que Esc y
+    // el teclado sigan dentro del modal.
+    else if (refreshTarget && refreshPhase === 'running') refreshDialog?.focus();
+  });
+
+  function onWindowKeydown(e) {
+    if (e.key === 'Escape' && refreshTarget) closeRefresh();
   }
 
   loadProjects();
@@ -381,6 +449,8 @@
   }
 </script>
 
+<svelte:window onkeydown={onWindowKeydown} />
+
 <div class="app">
   <div class="container">
 
@@ -540,6 +610,27 @@
                 </td>
                 <td class="webhook-cell">
                   <div class="webhook-btn-group">
+                    {#if canRefresh(project)}
+                      <button
+                        type="button"
+                        class="refresh-btn"
+                        onclick={() => openRefresh(project)}
+                        disabled={st.kind === 'loading' || st.kind === 'running'}
+                        aria-label="Refrescar {project.name} con los datos de {project.refresh_from ?? 'prod'}"
+                        title="Refrescar con los datos de prod ({project.refresh_from ?? 'prod'})"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <ellipse cx="10" cy="5" rx="7" ry="2.5"/>
+                          <path d="M3 5v12c0 1.4 3.1 2.5 7 2.5"/>
+                          <path d="M3 11c0 1.4 3.1 2.5 7 2.5"/>
+                          <path d="M17 5v4"/>
+                          <path d="M21.5 15.5a4 4 0 0 0-7.4-1.5"/>
+                          <path d="M14 11.5V14h2.5"/>
+                          <path d="M14.5 18.5a4 4 0 0 0 7.4 1.5"/>
+                          <path d="M22 22.5V20h-2.5"/>
+                        </svg>
+                      </button>
+                    {/if}
                     {#if project.merge_url}
                       {@const ms = mergeStates[project.id]}
                       <button
@@ -588,11 +679,11 @@
                     </span>
                   {:else if st.kind === 'running'}
                     <span class="status loading" title="Iniciado: {fmtTime(st.rec?.started_at)}">
-                      <span class="spinner"></span> Desplegando...
+                      <span class="spinner"></span> {st.rec?.kind === 'refresh' ? 'Refrescando datos...' : 'Desplegando...'}
                     </span>
                   {:else if st.kind === 'success'}
-                    <span class="status success" title={st.rec ? `Tomó ${fmtDurationVerbose(st.rec.duration_s)} · ${fmtTime(st.rec.ended_at)}` : ''}>
-                      ✓ Desplegado
+                    <span class="status success" title={st.rec ? `${st.rec.kind === 'refresh' && st.rec.resumen ? st.rec.resumen + ' · ' : ''}Tomó ${fmtDurationVerbose(st.rec.duration_s)} · ${fmtTime(st.rec.ended_at)}` : ''}>
+                      ✓ {st.rec?.kind === 'refresh' ? 'Datos de prod' : 'Desplegado'}
                     </span>
                   {:else if st.kind === 'no_changes'}
                     <span class="status no-changes" title={st.rec ? `Verificado: ${fmtTime(st.rec.ended_at)}` : ''}>
@@ -605,7 +696,7 @@
                       onclick={() => openDetail(st.rec)}
                       title="Ver detalle del fallo"
                     >
-                      ✗ Falló{st.rec?.failed_step ? ` en ${st.rec.failed_step}` : ''}
+                      ✗ {st.rec?.kind === 'refresh' ? 'Falló el refresco' : 'Falló'}{st.rec?.failed_step ? ` en ${st.rec.failed_step}` : ''}
                     </button>
                   {:else if st.kind === 'error'}
                     <span class="status error">✗ Error de red</span>
@@ -711,6 +802,99 @@
     </div>
   {/if}
 
+  {#if refreshTarget}
+    {@const rp = refreshTarget}
+    <div
+      class="modal-backdrop"
+      onclick={closeRefresh}
+      onkeydown={(e) => { if (e.key === 'Escape') closeRefresh(); }}
+      role="presentation"
+    >
+      <div
+        class="modal refresh-modal"
+        bind:this={refreshDialog}
+        onclick={(e) => e.stopPropagation()}
+        onkeydown={(e) => { if (e.key === 'Escape') closeRefresh(); e.stopPropagation(); }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="refresh-title"
+        tabindex="-1"
+      >
+        <header class="modal-header">
+          <h3 id="refresh-title">Refrescar {rp.name}</h3>
+          <button type="button" class="modal-close" onclick={closeRefresh} aria-label="Cerrar" disabled={refreshPhase === 'sending'}>✕</button>
+        </header>
+        {#if refreshPhase !== 'running'}
+          <p class="power-text">
+            Se copian los datos de <strong>{rp.refresh_from ?? 'prod'}</strong> sobre los de <strong>{rp.id}</strong>:
+            asistentes, proyectos, cuentas, fuentes de datos, registros, bases de conocimiento y documentos.
+          </p>
+          <ul class="refresh-list">
+            <li>Prod solo se lee; no se modifica nada ahí.</li>
+            <li>Lo que hoy tiene dev se mueve a un respaldo en el server (se guardan las últimas 3 veces) y deja de verse en dev.</li>
+            <li>La API dev se detiene unos segundos y las sesiones abiertas en dev se cierran.</li>
+          </ul>
+          <label class="power-label" for="refresh-confirm">
+            Escribe <code>{rp.id}</code> para confirmar:
+          </label>
+          <input
+            id="refresh-confirm"
+            class="power-input"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            bind:this={refreshInput}
+            bind:value={refreshTyped}
+            disabled={refreshPhase === 'sending'}
+            onkeydown={(e) => { if (e.key === 'Enter') confirmRefresh(); }}
+          />
+          {#if refreshError}
+            <p class="power-error" role="alert">✗ {refreshError}</p>
+          {/if}
+          <div class="power-actions">
+            <button type="button" class="btn-power-cancel" onclick={closeRefresh} disabled={refreshPhase === 'sending'}>Cancelar</button>
+            <button
+              type="button"
+              class="btn-power-confirm"
+              onclick={confirmRefresh}
+              disabled={refreshPhase === 'sending' || refreshTyped !== rp.id}
+            >
+              {refreshPhase === 'sending' ? 'Lanzando…' : 'Refrescar dev'}
+            </button>
+          </div>
+        {:else if !refreshRec || refreshRec.event !== 'finished'}
+          <p class="refresh-progress" role="status">
+            <span class="spinner"></span>
+            Copiando los datos de prod… suele tardar menos de un minuto.
+          </p>
+          <p class="refresh-meta">Puedes cerrar esta ventana: el refresco sigue en el server y su avance se ve en la columna Estado.</p>
+          <div class="power-actions">
+            <button type="button" class="btn-power-cancel" onclick={closeRefresh}>Cerrar</button>
+          </div>
+        {:else if refreshRec.status === 'success'}
+          <p class="refresh-ok" role="status">✓ Listo en {fmtDurationVerbose(refreshRec.duration_s)}: dev ya tiene los datos de prod.</p>
+          {#if refreshRec.resumen}
+            <p class="refresh-meta">{refreshRec.resumen}</p>
+          {/if}
+          {#if refreshRec.respaldo}
+            <p class="refresh-meta">Lo que tenía dev quedó en <code>{refreshRec.respaldo}</code></p>
+          {/if}
+          <div class="power-actions">
+            <button type="button" class="btn-power-confirm" onclick={closeRefresh}>Cerrar</button>
+          </div>
+        {:else}
+          <p class="power-error" role="alert">
+            ✗ Falló en el paso «{refreshRec.failed_step || '?'}»: {refreshRec.error || 'revisa el log'}
+          </p>
+          <div class="power-actions">
+            <button type="button" class="btn-power-cancel" onclick={() => { const r = refreshRec; refreshTarget = null; openDetail(r); }}>Ver log</button>
+            <button type="button" class="btn-power-confirm" onclick={closeRefresh}>Cerrar</button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   {#if detailDeploy}
     <div
       class="modal-backdrop"
@@ -728,10 +912,13 @@
         tabindex="-1"
       >
         <header class="modal-header">
-          <h3>{detailDeploy.app} · <span class="status-tag {detailDeploy.status}">{detailDeploy.status}</span></h3>
+          <h3>{detailDeploy.app} · {detailDeploy.kind === 'refresh' ? 'refresco · ' : ''}<span class="status-tag {detailDeploy.status}">{detailDeploy.status}</span></h3>
           <button type="button" class="modal-close" onclick={closeDetail} aria-label="Cerrar">✕</button>
         </header>
         <div class="modal-meta">
+          {#if detailDeploy.error}
+            <div class="detail-error"><strong>Error:</strong> {detailDeploy.error}</div>
+          {/if}
           <div><strong>Paso fallido:</strong> {detailDeploy.failed_step || '—'}</div>
           <div><strong>Duración:</strong> {fmtDuration(detailDeploy.duration_s)}</div>
           <div><strong>Inicio:</strong> {fmtTime(detailDeploy.started_at)}</div>
@@ -1235,6 +1422,93 @@
   .merge-btn.error {
     background: #fef2f2;
     border-color: #fecaca;
+    color: var(--destructive);
+  }
+
+  .refresh-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #fcd34d;
+    background: #fffbeb;
+    color: #b45309;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  }
+
+  .refresh-btn svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .refresh-btn:hover:not(:disabled) {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    transform: scale(1.05);
+  }
+
+  .refresh-btn:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .refresh-btn:focus-visible {
+    outline: 2px solid #b45309;
+    outline-offset: 2px;
+  }
+
+  .refresh-modal {
+    max-width: 560px;
+  }
+
+  .refresh-modal .modal-header h3 {
+    font-family: inherit;
+  }
+
+  .refresh-list {
+    margin: 0 0 16px 18px;
+    font-size: 0.85rem;
+    color: #475569;
+    line-height: 1.55;
+  }
+
+  .refresh-progress,
+  .refresh-ok {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.92rem;
+    font-weight: 500;
+    margin: 4px 0 10px;
+  }
+
+  .refresh-progress {
+    color: var(--primary);
+  }
+
+  .refresh-ok {
+    color: #15803d;
+  }
+
+  .refresh-meta {
+    font-size: 0.82rem;
+    color: #64748b;
+    line-height: 1.5;
+    margin-bottom: 10px;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-error {
+    grid-column: 1 / -1;
     color: var(--destructive);
   }
 
