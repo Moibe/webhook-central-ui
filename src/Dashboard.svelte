@@ -70,6 +70,15 @@
   let refreshError = $state('');
   let refreshInput = $state();
   let refreshDialog = $state();
+  // El mismo modal sirve para deshacer el último refresco ("kind": "refresh-undo")
+  let refreshMode = $state('refrescar'); // 'refrescar' | 'deshacer'
+  let lastRefreshRecs = $state({}); // app -> último registro de refresco o de deshacer
+
+  // Etiquetas de la columna Estado y del detalle según el tipo de corrida
+  const KIND_LABELS = {
+    refresh: { running: 'Refrescando datos...', success: 'Datos de prod', failed: 'Falló el refresco', detail: 'refresco · ' },
+    'refresh-undo': { running: 'Deshaciendo refresco...', success: 'Refresco deshecho', failed: 'Falló deshacer', detail: 'deshacer refresco · ' },
+  };
 
   let detailDeploy = $state(null);
   let detailLogContent = $state('');
@@ -152,6 +161,7 @@
       if (!res.ok) return; // 404 mientras no haya logs/deploys.jsonl todavía
       const text = await res.text();
       const next = {};
+      const nextRefresh = {};
       for (const line of text.split('\n')) {
         const t = line.trim();
         if (!t) continue;
@@ -159,11 +169,15 @@
           const rec = JSON.parse(t);
           // El último evento por app gana (jsonl es append-only en orden cronológico)
           next[rec.app] = rec;
+          // Aparte, el último refresco/deshacer: un deploy de código después no
+          // debe esconder el botón de deshacer.
+          if (rec.kind === 'refresh' || rec.kind === 'refresh-undo') nextRefresh[rec.app] = rec;
         } catch (_) {
           // línea malformada, ignorar
         }
       }
       backendDeploys = next;
+      lastRefreshRecs = nextRefresh;
       pollOk = true;
     } catch (_) {
       // red caída, etc. — silencioso
@@ -232,7 +246,17 @@
     return isSuper && !!project.refresh_url && !!POWER_TOKEN && project.env === 'dev';
   }
 
-  function openRefresh(project) {
+  // Deshacer solo tiene sentido si el último refresco de la app cambió datos:
+  // terminó bien, o falló después de mover lo de dev (dejó respaldo). Si ya se
+  // deshizo, el último registro es el de deshacer y el botón desaparece.
+  function canUndoRefresh(project) {
+    if (!canRefresh(project) || !project.refresh_undo_url) return false;
+    const r = lastRefreshRecs[project.id];
+    return r?.kind === 'refresh' && r.event === 'finished' && (r.status === 'success' || !!r.respaldo);
+  }
+
+  function openRefresh(project, mode = 'refrescar') {
+    refreshMode = mode;
     refreshTarget = project;
     refreshTyped = '';
     refreshPhase = 'confirm';
@@ -252,7 +276,8 @@
     refreshError = '';
     try {
       const qs = new URLSearchParams({ token: POWER_TOKEN });
-      const res = await fetch(`${WEBHOOK_BASE}${project.refresh_url}?${qs}`, { method: 'POST' });
+      const url = refreshMode === 'deshacer' ? project.refresh_undo_url : project.refresh_url;
+      const res = await fetch(`${WEBHOOK_BASE}${url}?${qs}`, { method: 'POST' });
       const data = await res.json().catch(() => null);
       if (data?.ok && data.run_id) {
         refreshRunId = data.run_id;
@@ -639,6 +664,21 @@
                         </svg>
                       </button>
                     {/if}
+                    {#if canUndoRefresh(project)}
+                      <button
+                        type="button"
+                        class="refresh-btn undo-btn"
+                        onclick={() => openRefresh(project, 'deshacer')}
+                        disabled={st.kind === 'loading' || st.kind === 'running'}
+                        aria-label="Deshacer el último refresco de {project.name}"
+                        title="Deshacer el último refresco (dev regresa a como estaba antes)"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M9 14 4 9l5-5"/>
+                          <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
+                        </svg>
+                      </button>
+                    {/if}
                     {#if project.merge_url}
                       {@const ms = mergeStates[project.id]}
                       <button
@@ -687,11 +727,11 @@
                     </span>
                   {:else if st.kind === 'running'}
                     <span class="status loading" title="Iniciado: {fmtTime(st.rec?.started_at)}">
-                      <span class="spinner"></span> {st.rec?.kind === 'refresh' ? 'Refrescando datos...' : 'Desplegando...'}
+                      <span class="spinner"></span> {KIND_LABELS[st.rec?.kind]?.running ?? 'Desplegando...'}
                     </span>
                   {:else if st.kind === 'success'}
-                    <span class="status success" title={st.rec ? `${st.rec.kind === 'refresh' && st.rec.resumen ? st.rec.resumen + ' · ' : ''}Tomó ${fmtDurationVerbose(st.rec.duration_s)} · ${fmtTime(st.rec.ended_at)}` : ''}>
-                      ✓ {st.rec?.kind === 'refresh' ? 'Datos de prod' : 'Desplegado'}
+                    <span class="status success" title={st.rec ? `${KIND_LABELS[st.rec.kind] && st.rec.resumen ? st.rec.resumen + ' · ' : ''}Tomó ${fmtDurationVerbose(st.rec.duration_s)} · ${fmtTime(st.rec.ended_at)}` : ''}>
+                      ✓ {KIND_LABELS[st.rec?.kind]?.success ?? 'Desplegado'}
                     </span>
                   {:else if st.kind === 'no_changes'}
                     <span class="status no-changes" title={st.rec ? `Verificado: ${fmtTime(st.rec.ended_at)}` : ''}>
@@ -704,7 +744,7 @@
                       onclick={() => openDetail(st.rec)}
                       title="Ver detalle del fallo"
                     >
-                      ✗ {st.rec?.kind === 'refresh' ? 'Falló el refresco' : 'Falló'}{st.rec?.failed_step ? ` en ${st.rec.failed_step}` : ''}
+                      ✗ {KIND_LABELS[st.rec?.kind]?.failed ?? 'Falló'}{st.rec?.failed_step ? ` en ${st.rec.failed_step}` : ''}
                     </button>
                   {:else if st.kind === 'error'}
                     <span class="status error">✗ Error de red</span>
@@ -812,6 +852,7 @@
 
   {#if refreshTarget}
     {@const rp = refreshTarget}
+    {@const deshacer = refreshMode === 'deshacer'}
     <div
       class="modal-backdrop"
       onclick={closeRefresh}
@@ -829,19 +870,33 @@
         tabindex="-1"
       >
         <header class="modal-header">
-          <h3 id="refresh-title">Refrescar {rp.name}</h3>
+          <h3 id="refresh-title">{deshacer ? 'Deshacer el último refresco de' : 'Refrescar'} {rp.name}</h3>
           <button type="button" class="modal-close" onclick={closeRefresh} aria-label="Cerrar" disabled={refreshPhase === 'sending'}>✕</button>
         </header>
-        {#if refreshPhase !== 'running'}
+        {#if refreshPhase !== 'running' && deshacer}
+          <p class="power-text">
+            <strong>{rp.id}</strong> regresa a como estaba antes del refresco
+            {#if lastRefreshRecs[rp.id]?.ended_at}del <strong>{fmtTime(lastRefreshRecs[rp.id].ended_at)}</strong>{/if}:
+            vuelven sus asistentes, proyectos, cuentas, fuentes de datos, registros, bases de conocimiento y documentos.
+          </p>
+          <ul class="refresh-list">
+            <li>Lo que dev tiene ahora (la copia de prod y lo que hayas hecho desde entonces) no se borra: se aparta en el mismo respaldo del server.</li>
+            <li>Prod no se toca.</li>
+            <li>Cada refresco se puede deshacer una sola vez.</li>
+            <li>La API dev se detiene unos segundos y las sesiones abiertas en dev se cierran.</li>
+          </ul>
+        {:else if refreshPhase !== 'running'}
           <p class="power-text">
             Se copian los datos de <strong>{rp.refresh_from ?? 'prod'}</strong> sobre los de <strong>{rp.id}</strong>:
             asistentes, proyectos, cuentas, fuentes de datos, registros, bases de conocimiento y documentos.
           </p>
           <ul class="refresh-list">
             <li>Prod solo se lee; no se modifica nada ahí.</li>
-            <li>Lo que hoy tiene dev se mueve a un respaldo en el server (se guardan las últimas 3 veces) y deja de verse en dev.</li>
+            <li>Lo que hoy tiene dev se mueve a un respaldo en el server (se guardan las últimas 3 veces) y deja de verse en dev. Si te arrepientes, el botón ↩ lo regresa.</li>
             <li>La API dev se detiene unos segundos y las sesiones abiertas en dev se cierran.</li>
           </ul>
+        {/if}
+        {#if refreshPhase !== 'running'}
           <label class="power-label" for="refresh-confirm">
             Escribe <code>{rp.id}</code> para confirmar:
           </label>
@@ -867,25 +922,27 @@
               onclick={confirmRefresh}
               disabled={refreshPhase === 'sending' || refreshTyped !== rp.id}
             >
-              {refreshPhase === 'sending' ? 'Lanzando…' : 'Refrescar dev'}
+              {refreshPhase === 'sending' ? 'Lanzando…' : deshacer ? 'Deshacer refresco' : 'Refrescar dev'}
             </button>
           </div>
         {:else if !refreshRec || refreshRec.event !== 'finished'}
           <p class="refresh-progress" role="status">
             <span class="spinner"></span>
-            Copiando los datos de prod… suele tardar menos de un minuto.
+            {deshacer ? 'Regresando los datos que tenía dev… suele tardar unos segundos.' : 'Copiando los datos de prod… suele tardar menos de un minuto.'}
           </p>
-          <p class="refresh-meta">Puedes cerrar esta ventana: el refresco sigue en el server y su avance se ve en la columna Estado.</p>
+          <p class="refresh-meta">Puedes cerrar esta ventana: el trabajo sigue en el server y su avance se ve en la columna Estado.</p>
           <div class="power-actions">
             <button type="button" class="btn-power-cancel" onclick={closeRefresh}>Cerrar</button>
           </div>
         {:else if refreshRec.status === 'success'}
-          <p class="refresh-ok" role="status">✓ Listo en {fmtDurationVerbose(refreshRec.duration_s)}: dev ya tiene los datos de prod.</p>
+          <p class="refresh-ok" role="status">
+            ✓ Listo en {fmtDurationVerbose(refreshRec.duration_s)}: {deshacer ? 'dev volvió a como estaba antes del refresco.' : 'dev ya tiene los datos de prod.'}
+          </p>
           {#if refreshRec.resumen}
             <p class="refresh-meta">{refreshRec.resumen}</p>
           {/if}
           {#if refreshRec.respaldo}
-            <p class="refresh-meta">Lo que tenía dev quedó en <code>{refreshRec.respaldo}</code></p>
+            <p class="refresh-meta">{deshacer ? 'Lo que tenía dev (la copia de prod) quedó en' : 'Lo que tenía dev quedó en'} <code>{refreshRec.respaldo}</code></p>
           {/if}
           <div class="power-actions">
             <button type="button" class="btn-power-confirm" onclick={closeRefresh}>Cerrar</button>
@@ -920,7 +977,7 @@
         tabindex="-1"
       >
         <header class="modal-header">
-          <h3>{detailDeploy.app} · {detailDeploy.kind === 'refresh' ? 'refresco · ' : ''}<span class="status-tag {detailDeploy.status}">{detailDeploy.status}</span></h3>
+          <h3>{detailDeploy.app} · {KIND_LABELS[detailDeploy.kind]?.detail ?? ''}<span class="status-tag {detailDeploy.status}">{detailDeploy.status}</span></h3>
           <button type="button" class="modal-close" onclick={closeDetail} aria-label="Cerrar">✕</button>
         </header>
         <div class="modal-meta">
@@ -1472,6 +1529,22 @@
   .refresh-btn:focus-visible {
     outline: 2px solid #b45309;
     outline-offset: 2px;
+  }
+
+  /* Deshacer: mismo tamaño que refrescar, en gris para que no se confundan */
+  .undo-btn {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #475569;
+  }
+
+  .undo-btn:hover:not(:disabled) {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+  }
+
+  .undo-btn:focus-visible {
+    outline-color: #475569;
   }
 
   .refresh-modal {
