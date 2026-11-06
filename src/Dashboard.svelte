@@ -214,6 +214,17 @@
     powerError = '';
   }
 
+  // Cerrar un modal con clic en el fondo solo si el clic también EMPEZÓ en el fondo:
+  // seleccionar texto dentro del modal y soltar afuera no debe cerrarlo.
+  let pressOnBackdrop = false;
+  function backdropDown(e) {
+    pressOnBackdrop = e.target === e.currentTarget;
+  }
+  function backdropClick(e, close) {
+    if (pressOnBackdrop && e.target === e.currentTarget) close();
+    pressOnBackdrop = false;
+  }
+
   function closePower() {
     if (powerBusy) return;
     powerTarget = null;
@@ -795,7 +806,8 @@
     {@const stopping = powerTarget.action === 'stop'}
     <div
       class="modal-backdrop"
-      onclick={closePower}
+      onpointerdown={backdropDown}
+      onclick={(e) => backdropClick(e, closePower)}
       onkeydown={(e) => { if (e.key === 'Escape') closePower(); }}
       role="presentation"
     >
@@ -855,7 +867,8 @@
     {@const deshacer = refreshMode === 'deshacer'}
     <div
       class="modal-backdrop"
-      onclick={closeRefresh}
+      onpointerdown={backdropDown}
+      onclick={(e) => backdropClick(e, closeRefresh)}
       onkeydown={(e) => { if (e.key === 'Escape') closeRefresh(); }}
       role="presentation"
     >
@@ -963,7 +976,8 @@
   {#if detailDeploy}
     <div
       class="modal-backdrop"
-      onclick={closeDetail}
+      onpointerdown={backdropDown}
+      onclick={(e) => backdropClick(e, closeDetail)}
       onkeydown={(e) => { if (e.key === 'Escape') closeDetail(); }}
       role="presentation"
     >
