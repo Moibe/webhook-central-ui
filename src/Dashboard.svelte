@@ -729,7 +729,7 @@
                 <td class="envs-cell">
                   <div class="env-chips">
                     {#each appEnvs(project) as e (e.env)}
-                      <span class="env-chip chip-{e.env}" title="{ENV_LABELS[e.env]}: {e.id}">{ENV_LABELS[e.env]}</span>
+                      <span class="env-chip chip-{e.env}" title="{ENV_LABELS[e.env]}: {e.id}">{e.env === 'staging' ? 'Stag' : ENV_LABELS[e.env]}</span>
                     {/each}
                   </div>
                 </td>
@@ -1630,45 +1630,30 @@
     border: 1px solid #cbd5e1;
   }
 
-  /* Ambientes donde está la app: etiquetas rectangulares (no píldoras, para no
-     confundirlas con las del stack) con el color de cada pestaña. Si no caben en una
-     línea se acomodan en varias, así la columna no ensancha la tabla. */
+  /* Ambientes donde esta la app: etiquetas solidas con el color de cada pestana,
+     las tres siempre en una linea (staging se abrevia "Stag") */
   .env-chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 3px;
   }
 
   .env-chip {
     display: inline-flex;
     align-items: center;
-    height: 22px;
-    padding: 0 7px;
-    border-radius: 6px;
-    border: 1px solid;
-    font-size: 0.72rem;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 0.66rem;
     font-weight: 600;
     letter-spacing: 0.02em;
     white-space: nowrap;
   }
 
-  .chip-dev {
-    background: #e8edff;
-    color: #2f4bd8;
-    border-color: #c3cffd;
-  }
-
-  .chip-staging {
-    background: #fef3c7;
-    color: #92400e;
-    border-color: #fcd34d;
-  }
-
-  .chip-prod {
-    background: #d1fae5;
-    color: #065f46;
-    border-color: #6ee7b7;
-  }
+  .chip-dev { background: var(--primary); }
+  .chip-staging { background: #d97706; }
+  .chip-prod { background: #059669; }
 
   .folder-col {
     text-align: center;
