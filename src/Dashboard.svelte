@@ -808,7 +808,18 @@
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      {project.stack === 'python' ? 'API ↗' : 'Webapp ↗'}
+                      {#if project.stack === 'python'}
+                        <svg class="type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect width="20" height="8" x="2" y="2" rx="2" /><rect width="20" height="8" x="2" y="14" rx="2" />
+                          <line x1="6" x2="6.01" y1="6" y2="6" /><line x1="6" x2="6.01" y1="18" y2="18" />
+                        </svg>
+                        API ↗
+                      {:else}
+                        <svg class="type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="2" y="4" width="20" height="16" rx="2" /><path d="M10 4v4" /><path d="M2 8h20" /><path d="M6 4v4" />
+                        </svg>
+                        Webapp ↗
+                      {/if}
                     </a>
                   {:else}
                     <span class="muted">—</span>
@@ -1763,6 +1774,14 @@
     color: #6d28d9;
     border-color: #c4b5fd;
     transform: scale(1.05);
+  }
+
+  /* Ícono del tipo de app (Lucide: server para API, app-window para Webapp) */
+  .type-icon {
+    width: 13px;
+    height: 13px;
+    margin-right: 1px;
+    flex-shrink: 0;
   }
 
   .app-link {
