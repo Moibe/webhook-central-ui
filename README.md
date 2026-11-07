@@ -1,5 +1,24 @@
 # Svelte + Vite
 
+## Enviar la contraseña temporal por correo
+
+En **Usuarios**, el sobre de cada fila le manda al usuario su contraseña temporal por correo. Usa el servicio de
+notificaciones de ART Broker, el mismo que Nexus (Biblioratum): código en `server/mail.js` (transporte) y
+`server/mail-templates.js` (el correo). El remitente lo decide el servicio y sale como «ART».
+
+Se configura en `.env.server` (raíz del proyecto, en el servidor; plantilla en `.env.server.example`), con las mismas
+variables de Nexus: `CORREO_API_URL`, `CORREO_API_USUARIO` y `CORREO_API_CONTRASENA`. No va en `.env` (lo lee Vite al
+compilar) y nunca se sube a git. Se relee en cada llamada: no hace falta reiniciar. Sin esas tres variables el sobre
+queda apagado.
+
+- Solo funciona mientras el usuario no cambie su contraseña temporal (después solo existe el hash). Para volver a
+  mandarla, **Restablecer** genera una nueva.
+- El celular (SMS/WhatsApp) sigue sin funcionalidad.
+- Los logs dicen a quién se le mandó y quién lo pidió; nunca el cuerpo (ahí va la contraseña), el token ni las credenciales.
+- Pruebas: `npm test` (servicio de ART falseado en localhost; no llama al real).
+
+---
+
 This template should help get you started developing with Svelte in Vite.
 
 ## Recommended IDE Setup

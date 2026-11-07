@@ -105,6 +105,18 @@ export function destroySession(token) {
 export const listUsers = () =>
   Object.values(load().users).map((u) => ({ ...publicUser(u), temp_password: u.must_change ? u.temp_password : null }));
 
+// Lo necesario para mandarle su contraseña temporal por correo. Solo existe mientras no la cambie (después queda el hash)
+export function tempCredentials(username) {
+  const u = load().users[username];
+  if (!u) throw new Error('Usuario no encontrado');
+  if (u.role === 'superadmin') throw new Error('La contraseña del superadmin no se envía desde la UI');
+  if (!u.must_change || !u.temp_password) {
+    throw new Error('El usuario ya definió su contraseña: restablécela para generar una temporal');
+  }
+  if (!u.email) throw new Error('El usuario no tiene correo: captúralo primero');
+  return { username: u.username, email: u.email, password: u.temp_password };
+}
+
 // Opcionales: vacío los borra
 function cleanContact(email, phone) {
   const e = String(email ?? '').trim();

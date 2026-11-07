@@ -27,5 +27,8 @@ dist-ssr
 .env
 .env.local
 
+# Credenciales del servicio de correo (solo del servidor Node; ver .env.server.example)
+.env.server
+
 # Usuarios y sesiones del auth (hashes)
 data/

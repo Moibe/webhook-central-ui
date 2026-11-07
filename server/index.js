@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as store from './store.js';
+import * as mail from './mail.js';
+import { passwordEmail } from './mail-templates.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 4174);
@@ -43,6 +45,17 @@ async function readBody(req) {
   }
   return raw ? JSON.parse(raw) : {};
 }
+
+// Estado HTTP de cada falla del servicio de correo (el texto ya viene listo para la persona en MailError.message)
+const MAIL_STATUS = {
+  bad_recipient: 400,
+  not_configured: 503, bad_config: 503, insecure_url: 503,
+  auth: 502, rejected: 502, network: 502,
+  timeout: 504,
+};
+
+// Usuarios a los que ya se les está mandando su contraseña: un doble clic (o dos pestañas) no manda dos correos
+const sendingTo = new Set();
 
 // Freno básico a fuerza bruta: 8 intentos fallidos por IP cada 10 min
 const failures = new Map();
@@ -125,7 +138,31 @@ async function handleApi(req, res, url) {
     if (user.role !== 'superadmin') return send(res, 403, { error: 'Solo superadmin' });
     const name = decodeURIComponent(path.slice('/api/users/'.length));
     try {
-      if (path === '/api/users' && req.method === 'GET') return send(res, 200, store.listUsers());
+      if (path === '/api/users' && req.method === 'GET') {
+        const mailEnabled = mail.isConfigured(); // la UI enciende o apaga el botón de correo con esto
+        return send(res, 200, store.listUsers().map((u) => ({ ...u, mail_enabled: mailEnabled })));
+      }
+      const sendMatch = path.match(/^\/api\/users\/([^/]+)\/send-password$/);
+      if (sendMatch && req.method === 'POST') {
+        const { channel } = await readBody(req);
+        if (channel !== 'email') return send(res, 400, { error: 'Canal no soportado' });
+        const target = store.tempCredentials(decodeURIComponent(sendMatch[1]));
+        if (sendingTo.has(target.username)) return send(res, 409, { error: 'Ya se está enviando la contraseña de este usuario' });
+        sendingTo.add(target.username);
+        try {
+          const { subject, html } = passwordEmail({ username: target.username, password: target.password, appUrl: mail.readConfig().appUrl });
+          const via = await mail.sendMail({ to: target.email, subject, html });
+          // Nunca el cuerpo: ahí va la contraseña. Quién lo pidió y a dónde fue es lo que sirve para diagnosticar.
+          console.log(`Correo enviado a ${target.email} · ${subject} · ${via} · pedido por ${user.username}`);
+          return send(res, 200, { ok: true, email: target.email });
+        } catch (e) {
+          if (!(e instanceof mail.MailError)) throw e;
+          console.error(`Correo NO enviado a ${target.email} (${e.code}): ${e.message} · pedido por ${user.username}`);
+          return send(res, MAIL_STATUS[e.code] ?? 502, { error: e.message });
+        } finally {
+          sendingTo.delete(target.username);
+        }
+      }
       if (path === '/api/users' && req.method === 'POST') {
         return send(res, 201, { ok: true, temp_password: store.createUser(await readBody(req)) });
       }

@@ -6,6 +6,8 @@
   let newUser = $state({ username: '', email: '', phone: '' });
   let revealed = $state({}); // username -> true si el ojito está abierto
   let justIssued = $state(null); // { username, password } recién generada, para copiarla
+  let notice = $state(''); // aviso de éxito (verde), p. ej. "Contraseña enviada a ..."
+  let sending = $state({}); // username -> true mientras se le manda su correo
 
   async function api(path, method = 'GET', body) {
     const res = await fetch(path, {
@@ -28,6 +30,7 @@
 
   async function run(fn) {
     error = '';
+    notice = '';
     try {
       await fn();
       await load();
@@ -43,6 +46,28 @@
   });
 
   const setContact = (u, field, value) => run(() => api(`/api/users/${encodeURIComponent(u.username)}`, 'PATCH', { [field]: value }));
+
+  // El correo solo se puede mandar con correo capturado y con el servicio configurado en el servidor (mail_enabled)
+  const canEmail = (u) => !!u.email && u.mail_enabled && !sending[u.username];
+  const emailTip = (u) =>
+    sending[u.username] ? 'Enviando…'
+    : !u.email ? 'Captura el correo del usuario para poder enviarle la contraseña'
+    : !u.mail_enabled ? 'El envío de correo no está configurado en el servidor'
+    : `Enviar la contraseña por correo a ${u.email}`;
+
+  // El servidor no reintenta (un timeout puede haber salido), así que mientras envía el botón queda apagado
+  function sendEmail(u) {
+    if (!canEmail(u)) return;
+    sending[u.username] = true;
+    run(async () => {
+      try {
+        const { email } = await api(`/api/users/${encodeURIComponent(u.username)}/send-password`, 'POST', { channel: 'email' });
+        notice = `Contraseña de ${u.username} enviada a ${email}`;
+      } finally {
+        sending[u.username] = false;
+      }
+    });
+  }
 
   let pending = $state(null); // { kind: 'reset' | 'delete', user }
 
@@ -82,6 +107,7 @@
     <h2>Usuarios</h2>
 
     {#if error}<p class="err">✗ {error}</p>{/if}
+    {#if notice}<p class="issued" role="status">✓ {notice}</p>{/if}
     {#if justIssued}
       <p class="issued">
         Contraseña temporal de <strong>{justIssued.username}</strong>: <code>{justIssued.password}</code>
@@ -109,8 +135,8 @@
                 <button type="button" class="eye" aria-label={revealed[u.username] ? 'Ocultar' : 'Ver'} onclick={() => (revealed[u.username] = !revealed[u.username])}>
                   {revealed[u.username] ? '🙈' : '👁'}
                 </button>
-                <!-- Envío de la contraseña temporal: aún sin funcionalidad -->
-                <button type="button" class="send" aria-disabled="true" title="Enviar contraseña por correo (próximamente)" aria-label="Enviar contraseña por correo">
+                <!-- Correo: por el servicio de ART (el mismo de Nexus). Celular: aún sin funcionalidad -->
+                <button type="button" class="send mail" class:busy={sending[u.username]} aria-disabled={!canEmail(u)} title={emailTip(u)} aria-label="Enviar contraseña por correo" onclick={() => sendEmail(u)}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                 </button>
                 <button type="button" class="send" aria-disabled="true" title="Enviar contraseña por celular (próximamente)" aria-label="Enviar contraseña por celular">
@@ -137,7 +163,7 @@
       <input type="email" placeholder="correo (opcional)" autocomplete="off" bind:value={newUser.email} />
       <input type="tel" placeholder="celular (opcional)" autocomplete="off" bind:value={newUser.phone} />
       <button type="submit">Crear</button>
-      <span class="muted">Se genera una contraseña temporal de 5 caracteres.</span>
+      <span class="muted">Se genera una contraseña temporal de 5 caracteres; con correo capturado podrás enviársela desde la tabla.</span>
     </form>
   </div>
 </div>
@@ -164,6 +190,10 @@
   .pass code, .issued code { font-family: ui-monospace, Consolas, monospace; background: var(--muted); padding: 2px 6px; border-radius: 4px; }
   .send { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; margin-left: 2px; color: var(--muted-foreground); cursor: not-allowed; opacity: 0.6; }
   .send svg { width: 14px; height: 14px; }
+  /* El del correo está vivo cuando se puede usar; el del celular sigue apagado */
+  .send.mail:not([aria-disabled='true']) { color: var(--primary); border-color: var(--primary); cursor: pointer; opacity: 1; }
+  .send.mail:not([aria-disabled='true']):hover { background: var(--muted); }
+  .send.mail.busy { cursor: progress; opacity: 0.6; }
   .eye { border: 0; background: none; font-size: 0.95rem; padding: 0 4px; }
   .muted { color: #8aa0b8; font-size: 0.8rem; }
   .issued { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; font-size: 0.88rem; color: #166534; }
