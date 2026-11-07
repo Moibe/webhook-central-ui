@@ -87,6 +87,18 @@
   let sortKey = $state('project');
   let sortDir = $state('asc');
 
+  // Filtros por columna (estilo hoja de cálculo): clave de columna -> valores marcados.
+  // Sin nada marcado en una columna = esa columna no filtra; con valores marcados solo
+  // se ven las filas que tengan alguno de ellos. Entre columnas se combinan (Y).
+  let filters = $state({});
+  let filterOpen = $state(null); // { key, top, left } mientras el menú de una columna está abierto
+  let filterSearch = $state('');
+
+  const COLUMN_LABELS = {
+    name: 'Aplicación', project: 'Proyecto', owner: 'Owner', stack: 'Stack', branch: 'Branch',
+    type: 'Tipo de App', port: 'Puerto', status: 'Estado', live: 'Live',
+  };
+
   const isSuper = user.role === 'superadmin';
   let activeEnv = $state(user.tabs[0] ?? 'dev');
 
@@ -124,9 +136,107 @@
     );
   });
 
+  // Texto de la celda tal como lo ve el usuario: es lo que se lista y se compara en el filtro
+  function statusText(st) {
+    const kind = st.rec?.kind;
+    switch (st.kind) {
+      case 'loading': return 'Disparado';
+      case 'running': return KIND_LABELS[kind]?.running ?? 'Desplegando...';
+      case 'success': return KIND_LABELS[kind]?.success ?? 'Desplegado';
+      case 'no_changes': return 'Sin cambios';
+      case 'failed': return KIND_LABELS[kind]?.failed ?? 'Falló';
+      case 'error': return 'Error de red';
+      default: return 'Listo';
+    }
+  }
+
+  const LIVE_LABELS = { online: 'En línea', stopped: 'Detenida', errored: 'Con error', unknown: 'Sin dato' };
+
+  function filterValue(project, key) {
+    switch (key) {
+      case 'name': return project.name || '—';
+      case 'project': return PROJECT_BY_APP[project.id] ?? '—';
+      case 'owner': return project.owner || '—';
+      case 'stack': return project.stack === 'none' ? 'config' : (project.stack || '—');
+      case 'branch': return project.branch || '—';
+      case 'type': return !project.app_url ? '—' : project.stack === 'python' ? 'API' : 'Webapp';
+      case 'port': return appPort(project) ?? '—';
+      case 'status': return statusText(effectiveStatus(project.id));
+      case 'live': {
+        const l = liveStatus(project);
+        return LIVE_LABELS[l] ?? l;
+      }
+      default: return '';
+    }
+  }
+
+  // ¿Cumple los filtros de todas las columnas (menos `except`, para armar las opciones de esa columna)?
+  function matchesFilters(project, except = null) {
+    for (const key of Object.keys(filters)) {
+      if (key === except) continue;
+      const sel = filters[key];
+      if (sel?.length && !sel.includes(filterValue(project, key))) return false;
+    }
+    return true;
+  }
+
+  const activeFilterKeys = $derived(Object.keys(filters).filter((k) => filters[k]?.length));
+
+  // Valores de una columna con cuántas filas los tienen, respetando los demás filtros
+  function filterOptions(key) {
+    const counts = new Map();
+    for (const p of envProjects) {
+      if (!matchesFilters(p, key)) continue;
+      const v = filterValue(p, key);
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    for (const v of filters[key] ?? []) if (!counts.has(v)) counts.set(v, 0);
+    return [...counts]
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => String(a.value).localeCompare(String(b.value), 'es', { numeric: true }));
+  }
+
+  function toggleFilterValue(key, value) {
+    const cur = filters[key] ?? [];
+    filters = { ...filters, [key]: cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value] };
+  }
+
+  function clearFilter(key) {
+    const { [key]: _quitada, ...rest } = filters;
+    filters = rest;
+  }
+
+  function openFilter(e, key) {
+    e.stopPropagation(); // el botón vive dentro del th que ordena
+    if (filterOpen?.key === key) {
+      filterOpen = null;
+      return;
+    }
+    const r = e.currentTarget.getBoundingClientRect();
+    filterOpen = {
+      key,
+      top: r.bottom + 6,
+      left: Math.max(8, Math.min(r.left, window.innerWidth - 240 - 8)),
+    };
+    filterSearch = '';
+  }
+
+  function onWindowPointerdown(e) {
+    if (filterOpen && !e.target.closest?.('.filter-pop, .filter-btn')) filterOpen = null;
+  }
+
+  // Los valores de una pestaña no existen en las otras: al cambiar, se parte sin filtros
+  function setEnv(env) {
+    activeEnv = env;
+    filters = {};
+    filterOpen = null;
+  }
+
+  const visibleProjects = $derived(envProjects.filter((p) => matchesFilters(p)));
+
   const sortedProjects = $derived.by(() => {
-    if (!sortKey) return envProjects;
-    const arr = [...envProjects];
+    if (!sortKey) return visibleProjects;
+    const arr = [...visibleProjects];
     arr.sort((a, b) => {
       const av = sortValue(a, sortKey);
       const bv = sortValue(b, sortKey);
@@ -319,6 +429,10 @@
   });
 
   function onWindowKeydown(e) {
+    if (e.key === 'Escape' && filterOpen) {
+      filterOpen = null;
+      return;
+    }
     if (e.key === 'Escape' && refreshTarget) closeRefresh();
   }
 
@@ -493,7 +607,35 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window
+  onkeydown={onWindowKeydown}
+  onpointerdown={onWindowPointerdown}
+  onscroll={() => (filterOpen = null)}
+  onresize={() => (filterOpen = null)}
+/>
+
+<!-- Encabezado de columna: el clic en el título ordena, el embudo abre el filtro de esa columna -->
+{#snippet sortTh(key, label, cls = '', filterable = true)}
+  <th class="sortable {cls}" onclick={() => setSort(key)}>
+    <span class="th-inner">
+      <span class="th-label">{label}<span class="sort-arrow {sortKey === key ? 'active' : ''}">{sortKey === key ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span></span>
+      {#if filterable}
+        <button
+          type="button"
+          class="filter-btn {filters[key]?.length ? 'active' : ''}"
+          onclick={(e) => openFilter(e, key)}
+          aria-label="Filtrar por {COLUMN_LABELS[key]}{filters[key]?.length ? ` (${filters[key].length} marcados)` : ''}"
+          aria-expanded={filterOpen?.key === key}
+          title={filters[key]?.length ? `Filtrando: ${filters[key].join(', ')}` : `Filtrar por ${COLUMN_LABELS[key]}`}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />
+          </svg>
+        </button>
+      {/if}
+    </span>
+  </th>
+{/snippet}
 
 <div class="app">
   <div class="container">
@@ -508,11 +650,17 @@
           <button
             type="button"
             class="env-tab env-{env} {activeEnv === env ? 'active' : ''}"
-            onclick={() => activeEnv = env}
+            onclick={() => setEnv(env)}
           >
             {ENV_LABELS[env]}
           </button>
         {/each}
+        {#if activeFilterKeys.length}
+          <div class="filter-summary">
+            <span>Mostrando {sortedProjects.length} de {envProjects.length}</span>
+            <button type="button" class="filter-clear-all" onclick={() => (filters = {})}>Limpiar filtros</button>
+          </div>
+        {/if}
       </div>
 
       <div class="card">
@@ -524,38 +672,18 @@
         <table>
           <thead>
             <tr>
-              <th class="sortable" onclick={() => setSort('name')}>
-                Aplicación<span class="sort-arrow {sortKey === 'name' ? 'active' : ''}">{sortKey === 'name' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
+              {@render sortTh('name', 'Aplicación')}
               <th class="folder-col">Origen</th>
-              <th class="sortable" onclick={() => setSort('project')}>
-                Proyecto<span class="sort-arrow {sortKey === 'project' ? 'active' : ''}">{sortKey === 'project' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
-              <th class="sortable" onclick={() => setSort('owner')}>
-                Owner<span class="sort-arrow {sortKey === 'owner' ? 'active' : ''}">{sortKey === 'owner' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
-              <th class="sortable" onclick={() => setSort('stack')}>
-                Stack<span class="sort-arrow {sortKey === 'stack' ? 'active' : ''}">{sortKey === 'stack' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
-              <th class="sortable" onclick={() => setSort('branch')}>
-                Branch<span class="sort-arrow {sortKey === 'branch' ? 'active' : ''}">{sortKey === 'branch' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
+              {@render sortTh('project', 'Proyecto')}
+              {@render sortTh('owner', 'Owner')}
+              {@render sortTh('stack', 'Stack')}
+              {@render sortTh('branch', 'Branch')}
               <th class="app-col">DOM</th>
-              <th class="sortable" onclick={() => setSort('type')}>
-                Tipo de App<span class="sort-arrow {sortKey === 'type' ? 'active' : ''}">{sortKey === 'type' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
-              <th class="sortable" onclick={() => setSort('port')}>
-                Puerto<span class="sort-arrow {sortKey === 'port' ? 'active' : ''}">{sortKey === 'port' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
-              <th class="sortable webhook-col" onclick={() => setSort('webhook')}>
-                DEPLOY<span class="sort-arrow {sortKey === 'webhook' ? 'active' : ''}">{sortKey === 'webhook' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
-              <th class="sortable" onclick={() => setSort('status')}>
-                Estado<span class="sort-arrow {sortKey === 'status' ? 'active' : ''}">{sortKey === 'status' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
-              <th class="sortable live-col" onclick={() => setSort('live')}>
-                Live<span class="sort-arrow {sortKey === 'live' ? 'active' : ''}">{sortKey === 'live' ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
-              </th>
+              {@render sortTh('type', 'Tipo de App')}
+              {@render sortTh('port', 'Puerto')}
+              {@render sortTh('webhook', 'DEPLOY', 'webhook-col', false)}
+              {@render sortTh('status', 'Estado')}
+              {@render sortTh('live', 'Live', 'live-col')}
             </tr>
           </thead>
           <tbody>
@@ -784,7 +912,7 @@
             {:else}
               <tr class="empty-row">
                 <td colspan="12" class="placeholder-msg">
-                  {activeEnv === 'staging' ? 'Aún no hay proyectos en Staging' : activeEnv === 'prod' ? 'Aún no hay proyectos en producción' : 'No hay proyectos'}
+                  {activeFilterKeys.length ? 'Ningún proyecto coincide con los filtros' : activeEnv === 'staging' ? 'Aún no hay proyectos en Staging' : activeEnv === 'prod' ? 'Aún no hay proyectos en producción' : 'No hay proyectos'}
                 </td>
               </tr>
             {/each}
@@ -800,6 +928,39 @@
       <p>Flujo: <span class="flow">git pull → dependencias → pm2 restart</span></p>
     </footer>
   </div>
+
+  {#if filterOpen}
+    {@const fkey = filterOpen.key}
+    {@const opts = filterOptions(fkey)}
+    {@const q = filterSearch.trim().toLowerCase()}
+    {@const shown = q ? opts.filter((o) => String(o.value).toLowerCase().includes(q)) : opts}
+    {@const selected = filters[fkey] ?? []}
+    <div
+      class="filter-pop env-{activeEnv}"
+      style="top: {filterOpen.top}px; left: {filterOpen.left}px"
+      role="dialog"
+      aria-label="Filtrar por {COLUMN_LABELS[fkey]}"
+      tabindex="-1"
+    >
+      {#if opts.length > 8}
+        <input class="filter-search" type="search" placeholder="Buscar..." bind:value={filterSearch} />
+      {/if}
+      <div class="filter-list">
+        {#each shown as o (o.value)}
+          <label class="filter-opt">
+            <input type="checkbox" checked={selected.includes(o.value)} onchange={() => toggleFilterValue(fkey, o.value)} />
+            <span class="filter-opt-text" title={o.value}>{o.value}</span>
+            <span class="filter-opt-count">{o.count}</span>
+          </label>
+        {:else}
+          <p class="filter-none">Sin coincidencias</p>
+        {/each}
+      </div>
+      <div class="filter-foot">
+        <button type="button" class="filter-clear" disabled={!selected.length} onclick={() => clearFilter(fkey)}>Limpiar</button>
+      </div>
+    </div>
+  {/if}
 
   {#if powerTarget}
     {@const pp = powerTarget.project}
@@ -1188,6 +1349,167 @@
 
   .sort-arrow.active {
     opacity: 1;
+  }
+
+  /* Filtro por columna: embudo junto a la flecha de orden */
+  .th-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .filter-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #fff;
+    opacity: 0.55;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s, color 0.15s;
+  }
+
+  .filter-btn svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .filter-btn:hover,
+  .filter-btn[aria-expanded='true'] {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .filter-btn.active {
+    opacity: 1;
+    background: #fff;
+    color: var(--env-main);
+  }
+
+  .filter-btn.active svg {
+    fill: currentColor;
+  }
+
+  .filter-summary {
+    margin-left: auto;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.8rem;
+    color: var(--muted-foreground);
+  }
+
+  .filter-clear-all,
+  .filter-clear {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--foreground);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .filter-clear-all:hover,
+  .filter-clear:hover:not(:disabled) {
+    background: var(--muted);
+  }
+
+  .filter-clear:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .filter-pop {
+    position: fixed;
+    z-index: 900;
+    width: 240px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+
+  .filter-search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: inherit;
+    outline: none;
+  }
+
+  .filter-search:focus {
+    border-color: var(--env-main);
+  }
+
+  .filter-list {
+    max-height: 240px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .filter-opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .filter-opt:hover {
+    background: var(--muted);
+  }
+
+  .filter-opt input {
+    margin: 0;
+    accent-color: var(--env-main);
+  }
+
+  .filter-opt-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .filter-opt-count {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+  }
+
+  .filter-none {
+    margin: 0;
+    padding: 10px 8px;
+    text-align: center;
+    color: var(--muted-foreground);
+  }
+
+  .filter-foot {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
   }
 
   tbody tr {
