@@ -729,7 +729,11 @@
                 <td class="envs-cell">
                   <div class="env-chips">
                     {#each appEnvs(project) as e (e.env)}
-                      <span class="env-chip chip-{e.env}" title="{ENV_LABELS[e.env]}: {e.id}">{e.env === 'staging' ? 'Stag' : ENV_LABELS[e.env]}</span>
+                      {#if user.tabs.includes(e.env) && e.env !== activeEnv}
+                        <button type="button" class="env-chip chip-{e.env} chip-link" onclick={() => setEnv(e.env)} title="Ir a {ENV_LABELS[e.env]} ({e.id})">{e.env === 'staging' ? 'Stag' : ENV_LABELS[e.env]}</button>
+                      {:else}
+                        <span class="env-chip chip-{e.env}" title="{ENV_LABELS[e.env]}: {e.id}">{e.env === 'staging' ? 'Stag' : ENV_LABELS[e.env]}</span>
+                      {/if}
                     {/each}
                   </div>
                 </td>
@@ -1668,6 +1672,19 @@
     font-weight: 600;
     letter-spacing: 0.02em;
     white-space: nowrap;
+    border: 0;
+    font-family: inherit;
+  }
+
+  /* Etiqueta de otro ambiente: lleva a esa pestaña */
+  .chip-link {
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.15s;
+  }
+
+  .chip-link:hover {
+    filter: brightness(1.12);
+    transform: translateY(-1px);
   }
 
   .chip-dev { background: var(--primary); }
