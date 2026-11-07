@@ -1673,8 +1673,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     color: #d97706;
     border: 1px solid #fde68a;
     background: #fffbeb;
@@ -1684,8 +1684,8 @@
   }
 
   .folder-icon svg {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
   }
 
   .folder-icon:hover {
@@ -1699,8 +1699,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     margin-left: 6px;
     color: #24292f;
     border: 1px solid #d0d7de;
@@ -1710,8 +1710,8 @@
   }
 
   .repo-icon svg {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
   }
 
   .repo-icon:hover {
