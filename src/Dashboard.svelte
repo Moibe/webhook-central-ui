@@ -96,8 +96,30 @@
 
   const COLUMN_LABELS = {
     name: 'Aplicación', project: 'Proyecto', owner: 'Owner', stack: 'Stack', branch: 'Branch',
-    type: 'Tipo de App', port: 'Puerto', status: 'Estado', live: 'Live',
+    envs: 'Ambientes', type: 'Tipo de App', port: 'Puerto', status: 'Estado', live: 'Live',
   };
+
+  // Una misma app vive en varios ambientes como entradas separadas de apps.json
+  // (nexus_back, nexus_back_dev, nexus_back_staging): se agrupan por el id sin el
+  // sufijo de ambiente. Una entrada sin `env` cuenta como dev, igual que en las pestañas.
+  const ENV_ORDER = ['dev', 'staging', 'prod'];
+  const envOf = (p) => (p.env === 'staging' || p.env === 'prod' ? p.env : 'dev');
+  const baseId = (id) => id.replace(/[-_](dev|staging)$/, '');
+
+  const instancesByBase = $derived.by(() => {
+    const map = {};
+    for (const p of projects) {
+      const inst = (map[baseId(p.id)] ??= {});
+      inst[envOf(p)] ??= p.id;
+    }
+    return map;
+  });
+
+  // Ambientes donde está desplegada la app de esta fila (dev → staging → prod), con el id de cada instancia
+  function appEnvs(project) {
+    const inst = instancesByBase[baseId(project.id)] ?? {};
+    return ENV_ORDER.filter((e) => inst[e]).map((e) => ({ env: e, id: inst[e] }));
+  }
 
   const isSuper = user.role === 'superadmin';
   let activeEnv = $state(user.tabs[0] ?? 'dev');
@@ -126,14 +148,17 @@
       case 'webhook': return project.deploy_url ?? '';
       case 'status': return effectiveStatus(project.id).kind;
       case 'live': return liveStatus(project) === 'online' ? 0 : 1;
+      case 'envs': {
+        // Primero las que ya llegaron a prod, luego a staging, y al final las que solo están en dev
+        const e = appEnvs(project).map((x) => x.env);
+        return ['prod', 'staging', 'dev'].map((k) => (e.includes(k) ? 0 : 1)).join('');
+      }
       default: return '';
     }
   }
 
   const envProjects = $derived.by(() => {
-    return projects.filter((p) =>
-      activeEnv === 'dev' ? p.env !== 'staging' && p.env !== 'prod' : p.env === activeEnv
-    );
+    return projects.filter((p) => envOf(p) === activeEnv);
   });
 
   // Texto de la celda tal como lo ve el usuario: es lo que se lista y se compara en el filtro
@@ -159,6 +184,7 @@
       case 'owner': return project.owner || '—';
       case 'stack': return project.stack === 'none' ? 'config' : (project.stack || '—');
       case 'branch': return project.branch || '—';
+      case 'envs': return appEnvs(project).map((x) => ENV_LABELS[x.env]); // varios valores por fila
       case 'type': return !project.app_url ? '—' : project.stack === 'python' ? 'API' : 'Webapp';
       case 'port': return appPort(project) ?? '—';
       case 'status': return statusText(effectiveStatus(project.id));
@@ -170,12 +196,15 @@
     }
   }
 
+  // Una celda puede tener varios valores (Ambientes): siempre se trabaja con una lista
+  const valuesOf = (project, key) => [].concat(filterValue(project, key));
+
   // ¿Cumple los filtros de todas las columnas (menos `except`, para armar las opciones de esa columna)?
   function matchesFilters(project, except = null) {
     for (const key of Object.keys(filters)) {
       if (key === except) continue;
       const sel = filters[key];
-      if (sel?.length && !sel.includes(filterValue(project, key))) return false;
+      if (sel?.length && !valuesOf(project, key).some((v) => sel.includes(v))) return false;
     }
     return true;
   }
@@ -187,13 +216,17 @@
     const counts = new Map();
     for (const p of envProjects) {
       if (!matchesFilters(p, key)) continue;
-      const v = filterValue(p, key);
-      counts.set(v, (counts.get(v) ?? 0) + 1);
+      for (const v of valuesOf(p, key)) counts.set(v, (counts.get(v) ?? 0) + 1);
     }
     for (const v of filters[key] ?? []) if (!counts.has(v)) counts.set(v, 0);
+    const rank = (v) => ENV_ORDER.findIndex((e) => ENV_LABELS[e] === v);
     return [...counts]
       .map(([value, count]) => ({ value, count }))
-      .sort((a, b) => String(a.value).localeCompare(String(b.value), 'es', { numeric: true }));
+      .sort((a, b) =>
+        key === 'envs'
+          ? rank(a.value) - rank(b.value) // Dev, Staging, Prod
+          : String(a.value).localeCompare(String(b.value), 'es', { numeric: true })
+      );
   }
 
   function toggleFilterValue(key, value) {
@@ -663,7 +696,7 @@
         {/if}
       </div>
 
-      <div class="card">
+      <div class="card" onscroll={() => (filterOpen = null)}>
       {#if loading}
         <p class="loading-msg"><span class="spinner"></span> Cargando proyectos...</p>
       {:else if error}
@@ -673,6 +706,7 @@
           <thead>
             <tr>
               {@render sortTh('name', 'Aplicación')}
+              {@render sortTh('envs', 'Ambientes')}
               <th class="folder-col">Origen</th>
               {@render sortTh('project', 'Proyecto')}
               {@render sortTh('owner', 'Owner')}
@@ -692,6 +726,13 @@
               {@const live = liveStatus(project)}
               <tr>
                 <td class="project-name">{project.name}</td>
+                <td class="envs-cell">
+                  <div class="env-chips">
+                    {#each appEnvs(project) as e (e.env)}
+                      <span class="env-chip chip-{e.env}" title="{ENV_LABELS[e.env]}: {e.id}">{ENV_LABELS[e.env]}</span>
+                    {/each}
+                  </div>
+                </td>
                 <td class="folder-cell">
                   <span
                     class="folder-icon"
@@ -911,7 +952,7 @@
               </tr>
             {:else}
               <tr class="empty-row">
-                <td colspan="12" class="placeholder-msg">
+                <td colspan="13" class="placeholder-msg">
                   {activeFilterKeys.length ? 'Ningún proyecto coincide con los filtros' : activeEnv === 'staging' ? 'Aún no hay proyectos en Staging' : activeEnv === 'prod' ? 'Aún no hay proyectos en producción' : 'No hay proyectos'}
                 </td>
               </tr>
@@ -1296,8 +1337,11 @@
     border-top: 3px solid var(--env-main);
   }
 
+  /* Con la tabla más ancha que la ventana se desplaza de lado en vez de cortar
+     columnas (antes Estado y Live quedaban fuera de la pantalla sin forma de llegar) */
   .card {
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   td.placeholder-msg {
@@ -1311,6 +1355,9 @@
   }
 
   table {
+    /* Relleno horizontal de las celdas. Con 13 columnas, 20px dejaba la tabla en ~1500px
+       de ancho mínimo; con 12px mide ~1350 y cabe sin desplazarse en una pantalla de 1366. */
+    --cell-x: 12px;
     width: 100%;
     border-collapse: collapse;
     border: none;
@@ -1321,7 +1368,7 @@
   }
 
   th {
-    padding: 14px 20px;
+    padding: 14px var(--cell-x);
     text-align: left;
     font-size: 0.78rem;
     font-weight: 600;
@@ -1355,16 +1402,19 @@
   .th-inner {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
   }
 
+  /* El embudo queda pegado a la flecha, pero su margen derecho negativo lo mete en el
+     relleno de la celda: así casi no le suma ancho a una tabla que ya es ancha */
   .filter-btn {
+    flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
+    margin-left: 2px;
+    margin-right: calc(var(--cell-x) * -1);
+    width: 16px;
+    height: 20px;
     padding: 0;
     border: 0;
     border-radius: 6px;
@@ -1376,8 +1426,8 @@
   }
 
   .filter-btn svg {
-    width: 13px;
-    height: 13px;
+    width: 11px;
+    height: 11px;
   }
 
   .filter-btn:hover,
@@ -1525,7 +1575,7 @@
   }
 
   td {
-    padding: 16px 20px;
+    padding: 16px var(--cell-x);
     vertical-align: middle;
     color: #334155;
     font-size: 0.9rem;
@@ -1578,6 +1628,46 @@
     background: var(--border);
     color: #475569;
     border: 1px solid #cbd5e1;
+  }
+
+  /* Ambientes donde está la app: etiquetas rectangulares (no píldoras, para no
+     confundirlas con las del stack) con el color de cada pestaña. Si no caben en una
+     línea se acomodan en varias, así la columna no ensancha la tabla. */
+  .env-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+
+  .env-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 6px;
+    border: 1px solid;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .chip-dev {
+    background: #e8edff;
+    color: #2f4bd8;
+    border-color: #c3cffd;
+  }
+
+  .chip-staging {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fcd34d;
+  }
+
+  .chip-prod {
+    background: #d1fae5;
+    color: #065f46;
+    border-color: #6ee7b7;
   }
 
   .folder-col {
