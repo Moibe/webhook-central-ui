@@ -10,9 +10,25 @@
       <h1>Buzzword IA DevOps</h1>
       {#if user && !user.must_change}
         <nav>
-          <button type="button" class="nav-item {page === 'dashboard' ? 'active' : ''}" onclick={() => onNavigate('dashboard')}>Panel</button>
+          <button type="button" class="nav-item {page === 'dashboard' ? 'active' : ''}" onclick={() => onNavigate('dashboard')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect width="7" height="9" x="3" y="3" rx="1" />
+              <rect width="7" height="5" x="14" y="3" rx="1" />
+              <rect width="7" height="9" x="14" y="12" rx="1" />
+              <rect width="7" height="5" x="3" y="16" rx="1" />
+            </svg>
+            Panel
+          </button>
           {#if isSuper}
-            <button type="button" class="nav-item {page === 'users' ? 'active' : ''}" onclick={() => onNavigate('users')}>Usuarios</button>
+            <button type="button" class="nav-item {page === 'users' ? 'active' : ''}" onclick={() => onNavigate('users')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <path d="M16 3.128a4 4 0 0 1 0 7.744" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <circle cx="9" cy="7" r="4" />
+              </svg>
+              Usuarios
+            </button>
           {/if}
         </nav>
       {/if}
@@ -76,6 +92,9 @@
   }
 
   .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     padding: 10px 12px;
     border: 0;
     border-radius: var(--radius);
@@ -85,6 +104,12 @@
     font-weight: 500;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
+  }
+
+  .nav-item svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
   }
 
   .nav-item:hover {
