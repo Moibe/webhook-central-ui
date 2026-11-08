@@ -15,6 +15,7 @@ queda apagado.
   mandarla, **Restablecer** genera una nueva.
 - El celular (SMS/WhatsApp) sigue sin funcionalidad.
 - Los logs dicen a quién se le mandó y quién lo pidió; nunca el cuerpo (ahí va la contraseña), el token ni las credenciales.
+- Al crear un usuario, la casilla "Enviar contraseña por correo al crear" viene marcada si hay correo capturado y el servicio está configurado; desmarcarla vale solo para ese alta.
 - Pruebas: `npm test` (servicio de ART falseado en localhost; no llama al real).
 
 ---

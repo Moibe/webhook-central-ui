@@ -39,10 +39,29 @@
     }
   }
 
+  // Casilla del formulario: solo cuenta si hay correo capturado y el servidor tiene el servicio configurado
+  let sendOnCreate = $state(true);
+  const mailOn = $derived(users.some((u) => u.mail_enabled));
+  const canSendNew = $derived(mailOn && !!newUser.email.trim());
+
   const addUser = () => run(async () => {
+    const { username, email } = newUser;
+    const wantMail = canSendNew && sendOnCreate;
     const { temp_password } = await api('/api/users', 'POST', newUser);
-    justIssued = { username: newUser.username, password: temp_password };
+    justIssued = { username, password: temp_password };
     newUser = { username: '', email: '', phone: '' };
+    sendOnCreate = true; // desmarcarla vale solo para este alta
+    if (!wantMail) return;
+    sending[username] = true;
+    try {
+      await api(`/api/users/${encodeURIComponent(username)}/send-password`, 'POST', { channel: 'email' });
+      notice = `Contraseña de ${username} enviada a ${email.trim()}`;
+    } catch (e) {
+      // El usuario ya existe; la contraseña sigue visible arriba y el sobre de su fila permite reintentar
+      error = `Usuario creado, pero no se pudo enviar el correo: ${e.message}`;
+    } finally {
+      sending[username] = false;
+    }
   });
 
   const setContact = (u, field, value) => run(() => api(`/api/users/${encodeURIComponent(u.username)}`, 'PATCH', { [field]: value }));
@@ -162,8 +181,12 @@
       <input placeholder="usuario (= owner)" autocomplete="off" bind:value={newUser.username} required />
       <input type="email" placeholder="correo (opcional)" autocomplete="off" bind:value={newUser.email} />
       <input type="tel" placeholder="celular (opcional)" autocomplete="off" bind:value={newUser.phone} />
+      <label class="send-check" class:off={!canSendNew} title={!mailOn ? 'El envío de correo no está configurado en el servidor' : !newUser.email.trim() ? 'Captura un correo para poder enviarle la contraseña' : ''}>
+        <input type="checkbox" checked={canSendNew && sendOnCreate} disabled={!canSendNew} onchange={(e) => (sendOnCreate = e.currentTarget.checked)} />
+        Enviar contraseña por correo al crear
+      </label>
       <button type="submit">Crear</button>
-      <span class="muted">Se genera una contraseña temporal de 5 caracteres; con correo capturado podrás enviársela desde la tabla.</span>
+      <span class="muted">Se genera una contraseña temporal de 5 caracteres; también puedes enviársela después desde la tabla.</span>
     </form>
   </div>
 </div>
@@ -187,6 +210,8 @@
   button.danger { color: var(--destructive); border-color: #f0c4c4; }
   .new { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.85rem; }
   .new input:not([type='checkbox']) { padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; }
+  .send-check { display: inline-flex; align-items: center; gap: 6px; color: var(--foreground); cursor: pointer; }
+  .send-check.off { color: var(--muted-foreground); cursor: not-allowed; }
   .pass code, .issued code { font-family: ui-monospace, Consolas, monospace; background: var(--muted); padding: 2px 6px; border-radius: 4px; }
   .send { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; margin-left: 2px; color: var(--muted-foreground); cursor: not-allowed; opacity: 0.6; }
   .send svg { width: 14px; height: 14px; }
