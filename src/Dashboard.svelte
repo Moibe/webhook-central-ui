@@ -277,6 +277,27 @@
 
   const visibleProjects = $derived(envProjects.filter((p) => matchesFilters(p)));
 
+  // Ordenado por Proyecto, las apps de un mismo proyecto (2 o más) llevan un renglón de grupo que las pliega juntas
+  let collapsedGroups = $state({}); // nombre del proyecto -> true si está plegado
+  const tableRows = $derived.by(() => {
+    if (sortKey !== 'project') return sortedProjects.map((p) => ({ key: p.id, project: p }));
+    const counts = {};
+    for (const p of sortedProjects) {
+      const g = PROJECT_BY_APP[p.id] ?? '—';
+      counts[g] = (counts[g] ?? 0) + 1;
+    }
+    const rows = [];
+    let current = null;
+    for (const p of sortedProjects) {
+      const g = PROJECT_BY_APP[p.id] ?? '—';
+      const grouped = counts[g] > 1 && g !== '—'; // las que no tienen proyecto no forman grupo
+      if (grouped && g !== current) rows.push({ key: 'grupo:' + g, group: g, count: counts[g] });
+      current = g;
+      if (!(grouped && collapsedGroups[g])) rows.push({ key: p.id, project: p, inGroup: grouped });
+    }
+    return rows;
+  });
+
   const sortedProjects = $derived.by(() => {
     if (!sortKey) return visibleProjects;
     const arr = [...visibleProjects];
@@ -792,7 +813,20 @@
             </tr>
           </thead>
           <tbody>
-            {#each sortedProjects as project}
+            {#each tableRows as row (row.key)}
+              {#if row.group}
+                {@const folded = !!collapsedGroups[row.group]}
+                <tr class="group-row">
+                  <td colspan="13">
+                    <button type="button" class="group-toggle" aria-expanded={!folded} onclick={() => (collapsedGroups[row.group] = !folded)}>
+                      <span class="group-caret" class:folded>▾</span>
+                      {row.group}
+                      <span class="group-count">{row.count} apps</span>
+                    </button>
+                  </td>
+                </tr>
+              {:else}
+              {@const project = row.project}
               {@const st = effectiveStatus(project.id)}
               {@const live = liveStatus(project)}
               {@const hasAddons = addonsOf(project).length > 0}
@@ -1018,6 +1052,7 @@
                   {/if}
                 </td>
               </tr>
+              {/if}
             {:else}
               <tr class="empty-row">
                 <td colspan="13" class="placeholder-msg">
@@ -2022,6 +2057,40 @@
     background: #fef2f2;
     border-color: #fecaca;
     color: var(--destructive);
+  }
+
+  .group-row td {
+    padding: 6px var(--cell-x);
+    background: var(--muted);
+    text-align: left;
+  }
+
+  .group-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--foreground);
+    cursor: pointer;
+  }
+
+  .group-caret {
+    display: inline-block;
+    transition: transform 0.15s;
+  }
+
+  .group-caret.folded {
+    transform: rotate(-90deg);
+  }
+
+  .group-count {
+    font-weight: 500;
+    color: var(--muted-foreground);
   }
 
   .nowrap {
