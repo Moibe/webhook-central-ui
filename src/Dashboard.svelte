@@ -93,6 +93,7 @@
   let filters = $state({});
   let filterOpen = $state(null); // { key, top, left } mientras el menú de una columna está abierto
   let filterSearch = $state('');
+  let addonOpen = $state(null); // { id, top, left } mientras el menú de add-ons de una app está abierto
 
   const COLUMN_LABELS = {
     name: 'Aplicación', project: 'Proyecto', owner: 'Owner', stack: 'Stack', branch: 'Branch',
@@ -245,6 +246,7 @@
       filterOpen = null;
       return;
     }
+    addonOpen = null;
     const r = e.currentTarget.getBoundingClientRect();
     filterOpen = {
       key,
@@ -256,13 +258,19 @@
 
   function onWindowPointerdown(e) {
     if (filterOpen && !e.target.closest?.('.filter-pop, .filter-btn')) filterOpen = null;
+    if (addonOpen && !e.target.closest?.('.addon-pop, .addon-btn')) addonOpen = null;
   }
+
+  const closePops = () => {
+    filterOpen = null;
+    addonOpen = null;
+  };
 
   // Los valores de una pestaña no existen en las otras: al cambiar, se parte sin filtros
   function setEnv(env) {
     activeEnv = env;
     filters = {};
-    filterOpen = null;
+    closePops();
   }
 
   const visibleProjects = $derived(envProjects.filter((p) => matchesFilters(p)));
@@ -409,6 +417,40 @@
     return r?.kind === 'refresh' && r.event === 'finished' && (r.status === 'success' || !!r.respaldo);
   }
 
+  // Add-ons de una app: acciones extra que no son el deploy (hoy, refrescar dev con los datos de prod y deshacerlo).
+  // Salen de un menú junto al nombre; una app sin ninguno no lleva ese botón. Para sumar uno nuevo, se agrega aquí.
+  function addonsOf(project) {
+    const list = [];
+    if (canRefresh(project)) {
+      list.push({ key: 'refresh', label: 'Refrescar con datos de prod', hint: `Desde ${project.refresh_from ?? 'prod'}` });
+    }
+    if (canUndoRefresh(project)) {
+      list.push({ key: 'undo', label: 'Deshacer el último refresco', hint: 'Dev regresa a como estaba antes' });
+    }
+    return list;
+  }
+
+  // "Constructor Agente RAG (Dev)" -> ["Constructor Agente RAG ", "(Dev)"]; un nombre de una palabra -> ["", nombre]
+  function splitLastWord(name) {
+    const i = name.lastIndexOf(' ');
+    return i < 0 ? ['', name] : [name.slice(0, i + 1), name.slice(i + 1)];
+  }
+
+  function toggleAddons(e, project) {
+    if (addonOpen?.id === project.id) {
+      addonOpen = null;
+      return;
+    }
+    filterOpen = null;
+    const r = e.currentTarget.getBoundingClientRect();
+    addonOpen = { id: project.id, top: r.bottom + 6, left: Math.max(8, Math.min(r.left, window.innerWidth - 280 - 8)) };
+  }
+
+  function runAddon(project, key) {
+    addonOpen = null;
+    openRefresh(project, key === 'undo' ? 'deshacer' : 'refrescar');
+  }
+
   function openRefresh(project, mode = 'refrescar') {
     refreshMode = mode;
     refreshTarget = project;
@@ -462,8 +504,8 @@
   });
 
   function onWindowKeydown(e) {
-    if (e.key === 'Escape' && filterOpen) {
-      filterOpen = null;
+    if (e.key === 'Escape' && (filterOpen || addonOpen)) {
+      closePops();
       return;
     }
     if (e.key === 'Escape' && refreshTarget) closeRefresh();
@@ -643,8 +685,8 @@
 <svelte:window
   onkeydown={onWindowKeydown}
   onpointerdown={onWindowPointerdown}
-  onscroll={() => (filterOpen = null)}
-  onresize={() => (filterOpen = null)}
+  onscroll={closePops}
+  onresize={closePops}
 />
 
 <!-- Encabezado de columna: el clic en el título ordena, el embudo abre el filtro de esa columna -->
@@ -668,6 +710,33 @@
       {/if}
     </span>
   </th>
+{/snippet}
+
+<!-- Iconos de los add-ons (trazo Lucide, toman el color del contenedor) -->
+{#snippet puzzleIcon()}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" />
+  </svg>
+{/snippet}
+
+{#snippet refreshIcon()}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <ellipse cx="10" cy="5" rx="7" ry="2.5"/>
+    <path d="M3 5v12c0 1.4 3.1 2.5 7 2.5"/>
+    <path d="M3 11c0 1.4 3.1 2.5 7 2.5"/>
+    <path d="M17 5v4"/>
+    <path d="M21.5 15.5a4 4 0 0 0-7.4-1.5"/>
+    <path d="M14 11.5V14h2.5"/>
+    <path d="M14.5 18.5a4 4 0 0 0 7.4 1.5"/>
+    <path d="M22 22.5V20h-2.5"/>
+  </svg>
+{/snippet}
+
+{#snippet undoIcon()}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M9 14 4 9l5-5"/>
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
+  </svg>
 {/snippet}
 
 <div class="app">
@@ -696,7 +765,7 @@
         {/if}
       </div>
 
-      <div class="card" onscroll={() => (filterOpen = null)}>
+      <div class="card" onscroll={closePops}>
       {#if loading}
         <p class="loading-msg"><span class="spinner"></span> Cargando proyectos...</p>
       {:else if error}
@@ -724,8 +793,26 @@
             {#each sortedProjects as project}
               {@const st = effectiveStatus(project.id)}
               {@const live = liveStatus(project)}
+              {@const hasAddons = addonsOf(project).length > 0}
               <tr>
-                <td class="project-name">{project.name}</td>
+                <td class="project-name">
+                  {#if hasAddons}
+                    <!-- El botón va pegado a la última palabra: si el nombre se parte en dos renglones, no queda solo -->
+                    {@const [head, tail] = splitLastWord(project.name)}
+                    {head}<span class="nowrap">{tail}<button
+                        type="button"
+                        class="addon-btn"
+                        class:open={addonOpen?.id === project.id}
+                        onclick={(e) => toggleAddons(e, project)}
+                        aria-haspopup="menu"
+                        aria-expanded={addonOpen?.id === project.id}
+                        aria-label="Add-ons de {project.name}"
+                        title="Add-ons"
+                      >{@render puzzleIcon()}</button></span>
+                  {:else}
+                    {project.name}
+                  {/if}
+                </td>
                 <td class="envs-cell">
                   <div class="env-chips">
                     {#each appEnvs(project) as e (e.env)}
@@ -838,42 +925,6 @@
                 </td>
                 <td class="webhook-cell">
                   <div class="webhook-btn-group">
-                    {#if canRefresh(project)}
-                      <button
-                        type="button"
-                        class="refresh-btn"
-                        onclick={() => openRefresh(project)}
-                        disabled={st.kind === 'loading' || st.kind === 'running'}
-                        aria-label="Refrescar {project.name} con los datos de {project.refresh_from ?? 'prod'}"
-                        title="Refrescar con los datos de prod ({project.refresh_from ?? 'prod'})"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <ellipse cx="10" cy="5" rx="7" ry="2.5"/>
-                          <path d="M3 5v12c0 1.4 3.1 2.5 7 2.5"/>
-                          <path d="M3 11c0 1.4 3.1 2.5 7 2.5"/>
-                          <path d="M17 5v4"/>
-                          <path d="M21.5 15.5a4 4 0 0 0-7.4-1.5"/>
-                          <path d="M14 11.5V14h2.5"/>
-                          <path d="M14.5 18.5a4 4 0 0 0 7.4 1.5"/>
-                          <path d="M22 22.5V20h-2.5"/>
-                        </svg>
-                      </button>
-                    {/if}
-                    {#if canUndoRefresh(project)}
-                      <button
-                        type="button"
-                        class="refresh-btn undo-btn"
-                        onclick={() => openRefresh(project, 'deshacer')}
-                        disabled={st.kind === 'loading' || st.kind === 'running'}
-                        aria-label="Deshacer el último refresco de {project.name}"
-                        title="Deshacer el último refresco (dev regresa a como estaba antes)"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <path d="M9 14 4 9l5-5"/>
-                          <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
-                        </svg>
-                      </button>
-                    {/if}
                     {#if project.merge_url}
                       {@const ms = mergeStates[project.id]}
                       <button
@@ -1077,6 +1128,32 @@
         </div>
       </div>
     </div>
+  {/if}
+
+  {#if addonOpen}
+    {@const ap = projects.find((p) => p.id === addonOpen.id)}
+    {@const items = ap ? addonsOf(ap) : []}
+    {#if items.length}
+      {@const ast = effectiveStatus(ap.id)}
+      <div class="addon-pop" role="menu" aria-label="Add-ons de {ap.name}" style="top: {addonOpen.top}px; left: {addonOpen.left}px">
+        <p class="addon-title">Add-ons</p>
+        {#each items as it (it.key)}
+          <button
+            type="button"
+            role="menuitem"
+            class="addon-item"
+            disabled={ast.kind === 'loading' || ast.kind === 'running'}
+            onclick={() => runAddon(ap, it.key)}
+          >
+            <span class="addon-ico addon-ico-{it.key}">{#if it.key === 'undo'}{@render undoIcon()}{:else}{@render refreshIcon()}{/if}</span>
+            <span class="addon-text">
+              <span class="addon-label">{it.label}</span>
+              <span class="addon-hint">{it.hint}</span>
+            </span>
+          </button>
+        {/each}
+      </div>
+    {/if}
   {/if}
 
   {#if refreshTarget}
@@ -1945,61 +2022,136 @@
     color: var(--destructive);
   }
 
-  .refresh-btn {
-    flex-shrink: 0;
+  .nowrap {
+    white-space: nowrap;
+  }
+
+  /* Add-ons: botón chico junto al nombre de la app (solo si tiene alguno) y el menú que abre */
+  .addon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 22px;
+    height: 22px;
+    margin-left: 8px;
     padding: 0;
-    border: 1px solid #fcd34d;
-    background: #fffbeb;
-    color: #b45309;
-    border-radius: 8px;
+    vertical-align: middle;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--muted-foreground);
+    border-radius: 6px;
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
 
-  .refresh-btn svg {
-    width: 17px;
-    height: 17px;
+  .addon-btn svg {
+    width: 13px;
+    height: 13px;
   }
 
-  .refresh-btn:hover:not(:disabled) {
-    background: #fef3c7;
-    border-color: #f59e0b;
-    transform: scale(1.05);
+  .addon-btn:hover,
+  .addon-btn.open {
+    background: var(--muted);
+    color: var(--foreground);
+    border-color: #cbd5e1;
   }
 
-  .refresh-btn:active:not(:disabled) {
-    transform: scale(0.95);
+  .addon-btn:focus-visible {
+    outline: 2px solid var(--env-main);
+    outline-offset: 2px;
   }
 
-  .refresh-btn:disabled {
+  .addon-pop {
+    position: fixed;
+    z-index: 900;
+    width: 280px;
+    box-sizing: border-box;
+    padding: 6px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+    font-size: 0.82rem;
+    color: var(--foreground);
+  }
+
+  .addon-title {
+    margin: 0;
+    padding: 4px 8px 6px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .addon-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 8px;
+    border: 0;
+    background: none;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+  }
+
+  .addon-item:hover:not(:disabled) {
+    background: var(--muted);
+  }
+
+  .addon-item:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .refresh-btn:focus-visible {
-    outline: 2px solid #b45309;
-    outline-offset: 2px;
+  .addon-item:focus-visible {
+    outline: 2px solid var(--env-main);
+    outline-offset: -2px;
   }
 
-  /* Deshacer: mismo tamaño que refrescar, en gris para que no se confundan */
-  .undo-btn {
+  /* El icono conserva los colores que tenían los botones de la columna: refrescar ámbar, deshacer gris */
+  .addon-ico {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid #fcd34d;
+    background: #fffbeb;
+    color: #b45309;
+    border-radius: 8px;
+  }
+
+  .addon-ico-undo {
     border-color: #cbd5e1;
     background: #f8fafc;
     color: #475569;
   }
 
-  .undo-btn:hover:not(:disabled) {
-    background: #e2e8f0;
-    border-color: #94a3b8;
+  .addon-ico svg {
+    width: 17px;
+    height: 17px;
   }
 
-  .undo-btn:focus-visible {
-    outline-color: #475569;
+  .addon-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .addon-label {
+    font-weight: 600;
+  }
+
+  .addon-hint {
+    font-size: 0.74rem;
+    color: var(--muted-foreground);
   }
 
   .refresh-modal {
