@@ -61,8 +61,10 @@
   let powerBusy = $state(false);
   let powerError = $state('');
 
-  // Refrescar una app dev con los datos de prod (refresh.sh): confirmar → lanzar →
+  // Actualizar una app dev con los datos de prod (refresh.sh): confirmar → lanzar →
   // seguir la corrida por el mismo polling de deploys.jsonl ("kind": "refresh").
+  // Vocabulario: en la pantalla se dice "actualizar / actualización"; el backend (refresh.sh, los hooks
+  // refrescar-*) y los identificadores de este archivo (refresh*) conservan "refresh".
   let refreshTarget = $state(null);
   let refreshTyped = $state('');
   let refreshPhase = $state('confirm'); // 'confirm' | 'sending' | 'running'
@@ -70,14 +72,14 @@
   let refreshError = $state('');
   let refreshInput = $state();
   let refreshDialog = $state();
-  // El mismo modal sirve para deshacer el último refresco ("kind": "refresh-undo")
+  // El mismo modal sirve para deshacer la última actualización ("kind": "refresh-undo")
   let refreshMode = $state('refrescar'); // 'refrescar' | 'deshacer'
-  let lastRefreshRecs = $state({}); // app -> último registro de refresco o de deshacer
+  let lastRefreshRecs = $state({}); // app -> último registro de actualización o de deshacer
 
   // Etiquetas de la columna Estado y del detalle según el tipo de corrida
   const KIND_LABELS = {
-    refresh: { running: 'Refrescando datos...', success: 'Datos de prod', failed: 'Falló el refresco', detail: 'refresco · ' },
-    'refresh-undo': { running: 'Deshaciendo refresco...', success: 'Refresco deshecho', failed: 'Falló deshacer', detail: 'deshacer refresco · ' },
+    refresh: { running: 'Actualizando datos...', success: 'Datos de prod', failed: 'Falló la actualización', detail: 'actualización · ' },
+    'refresh-undo': { running: 'Deshaciendo actualización...', success: 'Actualización deshecha', failed: 'Falló deshacer', detail: 'deshacer actualización · ' },
   };
 
   let detailDeploy = $state(null);
@@ -320,7 +322,7 @@
           const rec = JSON.parse(t);
           // El último evento por app gana (jsonl es append-only en orden cronológico)
           next[rec.app] = rec;
-          // Aparte, el último refresco/deshacer: un deploy de código después no
+          // Aparte, la última actualización/deshacer: un deploy de código después no
           // debe esconder el botón de deshacer.
           if (rec.kind === 'refresh' || rec.kind === 'refresh-undo') nextRefresh[rec.app] = rec;
         } catch (_) {
@@ -408,7 +410,7 @@
     return isSuper && !!project.refresh_url && !!POWER_TOKEN && project.env === 'dev';
   }
 
-  // Deshacer solo tiene sentido si el último refresco de la app cambió datos:
+  // Deshacer solo tiene sentido si la última actualización de la app cambió datos:
   // terminó bien, o falló después de mover lo de dev (dejó respaldo). Si ya se
   // deshizo, el último registro es el de deshacer y el botón desaparece.
   function canUndoRefresh(project) {
@@ -417,15 +419,15 @@
     return r?.kind === 'refresh' && r.event === 'finished' && (r.status === 'success' || !!r.respaldo);
   }
 
-  // Add-ons de una app: acciones extra que no son el deploy (hoy, refrescar dev con los datos de prod y deshacerlo).
+  // Add-ons de una app: acciones extra que no son el deploy (hoy, actualizar dev con los datos de prod y deshacerlo).
   // Salen de un menú junto al nombre; una app sin ninguno no lleva ese botón. Para sumar uno nuevo, se agrega aquí.
   function addonsOf(project) {
     const list = [];
     if (canRefresh(project)) {
-      list.push({ key: 'refresh', label: 'Refrescar con datos de prod', hint: `Desde ${project.refresh_from ?? 'prod'}` });
+      list.push({ key: 'refresh', label: 'Actualizar con datos de prod', hint: `Desde ${project.refresh_from ?? 'prod'}` });
     }
     if (canUndoRefresh(project)) {
-      list.push({ key: 'undo', label: 'Deshacer el último refresco', hint: 'Dev regresa a como estaba antes' });
+      list.push({ key: 'undo', label: 'Deshacer la última actualización', hint: 'Dev regresa a como estaba antes' });
     }
     return list;
   }
@@ -1177,19 +1179,19 @@
         tabindex="-1"
       >
         <header class="modal-header">
-          <h3 id="refresh-title">{deshacer ? 'Deshacer el último refresco de' : 'Refrescar'} {rp.name}</h3>
+          <h3 id="refresh-title">{deshacer ? 'Deshacer la última actualización de' : 'Actualizar'} {rp.name}</h3>
           <button type="button" class="modal-close" onclick={closeRefresh} aria-label="Cerrar" disabled={refreshPhase === 'sending'}>✕</button>
         </header>
         {#if refreshPhase !== 'running' && deshacer}
           <p class="power-text">
-            <strong>{rp.id}</strong> regresa a como estaba antes del refresco
+            <strong>{rp.id}</strong> regresa a como estaba antes de la actualización
             {#if lastRefreshRecs[rp.id]?.ended_at}del <strong>{fmtTime(lastRefreshRecs[rp.id].ended_at)}</strong>{/if}:
             vuelven sus asistentes, proyectos, cuentas, fuentes de datos, registros, bases de conocimiento y documentos.
           </p>
           <ul class="refresh-list">
             <li>Lo que dev tiene ahora (la copia de prod y lo que hayas hecho desde entonces) no se borra: se aparta en el mismo respaldo del server.</li>
             <li>Prod no se toca.</li>
-            <li>Cada refresco se puede deshacer una sola vez.</li>
+            <li>Cada actualización se puede deshacer una sola vez.</li>
             <li>La API dev se detiene unos segundos y las sesiones abiertas en dev se cierran.</li>
           </ul>
         {:else if refreshPhase !== 'running'}
@@ -1199,7 +1201,7 @@
           </p>
           <ul class="refresh-list">
             <li>Prod solo se lee; no se modifica nada ahí.</li>
-            <li>Lo que hoy tiene dev se mueve a un respaldo en el server (se guardan las últimas 3 veces) y deja de verse en dev. Si te arrepientes, el botón ↩ lo regresa.</li>
+            <li>Lo que hoy tiene dev se mueve a un respaldo en el server (se guardan las últimas 3 veces) y deja de verse en dev. Si te arrepientes, lo regresas con «Deshacer la última actualización» en el menú de add-ons.</li>
             <li>La API dev se detiene unos segundos y las sesiones abiertas en dev se cierran.</li>
           </ul>
         {/if}
@@ -1229,7 +1231,7 @@
               onclick={confirmRefresh}
               disabled={refreshPhase === 'sending' || refreshTyped !== rp.id}
             >
-              {refreshPhase === 'sending' ? 'Lanzando…' : deshacer ? 'Deshacer refresco' : 'Refrescar dev'}
+              {refreshPhase === 'sending' ? 'Lanzando…' : deshacer ? 'Deshacer actualización' : 'Actualizar dev'}
             </button>
           </div>
         {:else if !refreshRec || refreshRec.event !== 'finished'}
@@ -1243,7 +1245,7 @@
           </div>
         {:else if refreshRec.status === 'success'}
           <p class="refresh-ok" role="status">
-            ✓ Listo en {fmtDurationVerbose(refreshRec.duration_s)}: {deshacer ? 'dev volvió a como estaba antes del refresco.' : 'dev ya tiene los datos de prod.'}
+            ✓ Listo en {fmtDurationVerbose(refreshRec.duration_s)}: {deshacer ? 'dev volvió a como estaba antes de la actualización.' : 'dev ya tiene los datos de prod.'}
           </p>
           {#if refreshRec.resumen}
             <p class="refresh-meta">{refreshRec.resumen}</p>
@@ -2114,7 +2116,7 @@
     outline-offset: -2px;
   }
 
-  /* El icono conserva los colores que tenían los botones de la columna: refrescar ámbar, deshacer gris */
+  /* El icono conserva los colores que tenían los botones de la columna: actualizar ámbar, deshacer gris */
   .addon-ico {
     flex-shrink: 0;
     display: inline-flex;
