@@ -43,6 +43,8 @@
     'inventario-ti': 'Infra',
     'santander_ia_dev': 'Santander',
     'santander_ia': 'Santander',
+    'santander_closed': 'Santander',
+    'santander_closed_dev': 'Santander',
   };
 
   let projects = $state([]);
