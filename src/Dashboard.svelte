@@ -15,37 +15,61 @@
   const POLL_INTERVAL_MS = 4000;
   const FINISHED_TTL_MS = 10 * 60 * 1000;
 
-  const PROJECT_BY_APP = {
-    'mide-chatbot': 'Mide',
-    'svelte_mide': 'Mide',
-    'notificaciones_twilio': 'Mide',
-    'sandbox_mensajes': 'Mide',
-    'document_ai': 'Art',
-    'conmutador': 'Art',
-    'webhook-central-ui': 'DevOps',
-    'webhook-central': 'DevOps',
-    'constructor-agente-rag': 'Buzzword Agentes',
-    'buzzword-agentes-ui': 'Buzzword Agentes',
-    'host-asistentes': 'Buzzword Agentes',
-    'constructor-agente-rag-dev': 'Buzzword Agentes',
-    'buzzword-agentes-ui-dev': 'Buzzword Agentes',
-    'host-asistentes-dev': 'Buzzword Agentes',
-    'nexus_back': 'Biblioratum',
-    'nexus_poc_svelte': 'Biblioratum',
-    'nexus_back_dev': 'Biblioratum',
-    'nexus_poc_svelte_dev': 'Biblioratum',
-    'nexus_monitor': 'Biblioratum',
-    'nexus_back_staging': 'Biblioratum',
-    'nexus_poc_svelte_staging': 'Biblioratum',
-    'infra-timelapse': 'Prototipo',
-    'shape_up': 'Prototipo',
-    'shape_up_dev': 'Prototipo',
-    'inventario-ti': 'Infra',
-    'santander_ia_dev': 'Santander',
-    'santander_ia': 'Santander',
-    'santander_closed': 'Santander',
-    'santander_closed_dev': 'Santander',
-  };
+  // Proyecto de cada app (app id -> nombre). Vive en el servidor (data/users.json); solo el superadmin lo edita
+  let PROJECT_BY_APP = $state({});
+  let projEditing = $state(null); // id de la app cuya celda Proyecto se está editando
+  let projDraft = $state('');
+  let projSaving = $state(false);
+  let projError = $state(''); // se muestra en la celda que se estaba editando
+  let projErrorId = $state(null);
+  const projectNames = $derived([...new Set(Object.values(PROJECT_BY_APP))].sort((a, b) => a.localeCompare(b, 'es')));
+
+  function startProjEdit(project) {
+    projEditing = project.id;
+    projDraft = PROJECT_BY_APP[project.id] ?? '';
+    projError = '';
+    projErrorId = null;
+  }
+
+  async function saveProjEdit(project) {
+    if (projEditing !== project.id || projSaving) return;
+    const next = projDraft.trim();
+    if (next === (PROJECT_BY_APP[project.id] ?? '')) {
+      projEditing = null;
+      return;
+    }
+    projSaving = true;
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: next }),
+      });
+      if (res.status === 401) return onLogout(false);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const { [project.id]: _antes, ...rest } = PROJECT_BY_APP;
+      PROJECT_BY_APP = data.project ? { ...rest, [project.id]: data.project } : rest;
+      projEditing = null;
+    } catch (e) {
+      projError = e.message || 'No se pudo guardar';
+      projErrorId = project.id;
+      projEditing = null;
+    } finally {
+      projSaving = false;
+    }
+  }
+
+  function projKeydown(e, project) {
+    if (e.key === 'Enter') { e.preventDefault(); saveProjEdit(project); }
+    else if (e.key === 'Escape') { e.preventDefault(); projEditing = null; }
+  }
+
+  // Al aparecer el campo de edición, toma el foco y selecciona el texto
+  function focusSelect(node) {
+    node.focus();
+    node.select();
+  }
 
   let projects = $state([]);
   let loading = $state(true);
@@ -320,9 +344,10 @@
 
   async function loadProjects() {
     try {
-      const res = await fetch(APPS_URL);
+      const [res, resProj] = await Promise.all([fetch(APPS_URL), fetch('/api/projects', { cache: 'no-store' })]);
       if (res.status === 401) return onLogout(false);
       projects = await res.json();
+      if (resProj.ok) PROJECT_BY_APP = await resProj.json();
     } catch (e) {
       error = 'No se pudo cargar la lista de proyectos';
     } finally {
@@ -888,7 +913,32 @@
                   {/if}
                 </td>
                 <td class="project-group">
-                  {#if PROJECT_BY_APP[project.id]}
+                  {#if isSuper && projEditing === project.id}
+                    <input
+                      class="proj-input"
+                      list="proj-names"
+                      maxlength="40"
+                      placeholder="Escribe o elige…"
+                      aria-label="Proyecto de {project.name}"
+                      bind:value={projDraft}
+                      disabled={projSaving}
+                      use:focusSelect
+                      onkeydown={(e) => projKeydown(e, project)}
+                      onblur={() => saveProjEdit(project)}
+                    />
+                  {:else if isSuper}
+                    <button
+                      type="button"
+                      class="proj-edit"
+                      onclick={() => startProjEdit(project)}
+                      title="Cambiar proyecto (vacío = sin proyecto)"
+                      aria-label="Cambiar proyecto de {project.name}"
+                    >
+                      {#if PROJECT_BY_APP[project.id]}{PROJECT_BY_APP[project.id]}{:else}<span class="muted">—</span>{/if}
+                      <svg class="proj-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                    </button>
+                    {#if projErrorId === project.id}<span class="proj-error" role="alert">{projError}</span>{/if}
+                  {:else if PROJECT_BY_APP[project.id]}
                     {PROJECT_BY_APP[project.id]}
                   {:else}
                     <span class="muted">—</span>
@@ -1064,6 +1114,11 @@
             {/each}
           </tbody>
         </table>
+        {#if isSuper}
+          <datalist id="proj-names">
+            {#each projectNames as n (n)}<option value={n}></option>{/each}
+          </datalist>
+        {/if}
       {/if}
       </div>
     </div>
@@ -1727,6 +1782,60 @@
     font-weight: 500;
     color: #475569;
     font-size: 0.88rem;
+  }
+
+  .proj-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 6px;
+    margin: -2px -6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .proj-edit:hover,
+  .proj-edit:focus-visible {
+    border-color: var(--border);
+    background: #fff;
+  }
+
+  .proj-pencil {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    color: var(--muted-foreground);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .proj-edit:hover .proj-pencil,
+  .proj-edit:focus-visible .proj-pencil {
+    opacity: 1;
+  }
+
+  .proj-input {
+    width: 100%;
+    min-width: 120px;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    border: 1px solid var(--env-main);
+    border-radius: 6px;
+    font: inherit;
+    outline: none;
+  }
+
+  .proj-error {
+    display: block;
+    margin-top: 2px;
+    color: #dc2626;
+    font-size: 0.75rem;
+    font-weight: 400;
   }
 
   .badge {

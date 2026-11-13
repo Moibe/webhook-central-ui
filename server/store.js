@@ -174,6 +174,38 @@ export function changePassword(username, current, next, sessionToken) {
   save(db);
 }
 
+// Proyecto al que pertenece cada app (app id -> nombre). Solo existe en la UI: apps.json vive en el repo
+// webhook-central y escribir ahí ensuciaría el git del server. Mientras nadie edite, rige este mapa inicial.
+const DEFAULT_PROJECTS = {
+  'mide-chatbot': 'Mide', 'svelte_mide': 'Mide', 'notificaciones_twilio': 'Mide', 'sandbox_mensajes': 'Mide',
+  'document_ai': 'Art', 'conmutador': 'Art',
+  'webhook-central-ui': 'DevOps', 'webhook-central': 'DevOps',
+  'constructor-agente-rag': 'Buzzword Agentes', 'buzzword-agentes-ui': 'Buzzword Agentes', 'host-asistentes': 'Buzzword Agentes',
+  'constructor-agente-rag-dev': 'Buzzword Agentes', 'buzzword-agentes-ui-dev': 'Buzzword Agentes', 'host-asistentes-dev': 'Buzzword Agentes',
+  'nexus_back': 'Biblioratum', 'nexus_poc_svelte': 'Biblioratum', 'nexus_back_dev': 'Biblioratum', 'nexus_poc_svelte_dev': 'Biblioratum',
+  'nexus_monitor': 'Biblioratum', 'nexus_back_staging': 'Biblioratum', 'nexus_poc_svelte_staging': 'Biblioratum',
+  'infra-timelapse': 'Prototipo', 'shape_up': 'Prototipo', 'shape_up_dev': 'Prototipo',
+  'inventario-ti': 'Infra',
+  'santander_ia_dev': 'Santander', 'santander_ia': 'Santander', 'santander_closed': 'Santander', 'santander_closed_dev': 'Santander',
+};
+
+export const projectMap = () => ({ ...(load().projects ?? DEFAULT_PROJECTS) });
+
+// Asigna (o con vacío quita) el proyecto de una app. Si el nombre ya existe con otras mayúsculas
+// se usa el existente, para que "mide" no abra un grupo aparte de "Mide".
+export function setProject(appId, name) {
+  const clean = String(name ?? '').replace(/\s+/g, ' ').trim();
+  if (clean.length > 40) throw new Error('Nombre de proyecto demasiado largo (máx. 40)');
+  if (/[\u0000-\u001f<>]/.test(clean)) throw new Error('Nombre de proyecto inválido');
+  const db = load();
+  const map = { ...(db.projects ?? DEFAULT_PROJECTS) };
+  if (clean) map[appId] = Object.values(map).find((v) => v.toLowerCase() === clean.toLowerCase()) ?? clean;
+  else delete map[appId];
+  db.projects = map;
+  save(db);
+  return map[appId] ?? '';
+}
+
 export function deleteUser(username) {
   const db = load();
   const u = db.users[username];

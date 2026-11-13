@@ -114,6 +114,27 @@ async function handleApi(req, res, url) {
 
   if (path === '/api/apps') return send(res, 200, await allowedApps(user));
 
+  // Proyecto de cada app: todos lo leen (solo de sus apps); solo el superadmin lo cambia
+  if (path === '/api/projects' && req.method === 'GET') {
+    const map = store.projectMap();
+    const ids = (await allowedApps(user)).map((a) => a.id);
+    return send(res, 200, Object.fromEntries(ids.filter((id) => map[id]).map((id) => [id, map[id]])));
+  }
+  const projMatch = path.match(/^\/api\/projects\/([^/]+)$/);
+  if (projMatch && req.method === 'PUT') {
+    if (user.role !== 'superadmin') return send(res, 403, { error: 'Solo superadmin' });
+    const appId = decodeURIComponent(projMatch[1]);
+    if (!(await allowedApps(user)).some((a) => a.id === appId)) return send(res, 404, { error: 'App no encontrada' });
+    const { project } = await readBody(req);
+    try {
+      const saved = store.setProject(appId, project);
+      console.log(`Proyecto de ${appId} → ${saved || '(sin proyecto)'} · por ${user.username}`);
+      return send(res, 200, { ok: true, project: saved });
+    } catch (e) {
+      return send(res, 400, { error: e.message });
+    }
+  }
+
   if (path === '/api/deploys') {
     const ids = new Set((await allowedApps(user)).map((a) => a.id));
     let text = '';
