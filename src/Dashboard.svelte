@@ -292,7 +292,7 @@
     let current = null;
     for (const p of sortedProjects) {
       const g = PROJECT_BY_APP[p.id] ?? '—';
-      const grouped = counts[g] > 1 && g !== '—'; // las que no tienen proyecto no forman grupo
+      const grouped = g !== '—'; // todo proyecto lleva agrupador, aunque tenga una sola app; las sin proyecto no
       if (grouped && g !== current) rows.push({ key: 'grupo:' + g, group: g, count: counts[g] });
       current = g;
       if (!(grouped && collapsedGroups[g])) rows.push({ key: p.id, project: p, inGroup: grouped });
@@ -823,7 +823,7 @@
                     <button type="button" class="group-toggle" aria-expanded={!folded} onclick={() => (collapsedGroups[row.group] = !folded)}>
                       <span class="group-caret" class:folded>▾</span>
                       {row.group}
-                      <span class="group-count">{row.count} apps</span>
+                      <span class="group-count">{row.count} {row.count === 1 ? 'app' : 'apps'}</span>
                     </button>
                   </td>
                 </tr>
