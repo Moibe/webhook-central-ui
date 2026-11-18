@@ -1,4 +1,6 @@
 <script>
+  import PasswordInput from './PasswordInput.svelte';
+
   let { onLogin } = $props();
 
   let username = $state('');
@@ -34,7 +36,7 @@
     <label for="login-user">Usuario</label>
     <input id="login-user" type="text" autocomplete="username" bind:value={username} required />
     <label for="login-pass">Contraseña</label>
-    <input id="login-pass" type="password" autocomplete="current-password" bind:value={password} required />
+    <PasswordInput id="login-pass" autocomplete="current-password" bind:value={password} required />
     {#if error}<p class="login-error">✗ {error}</p>{/if}
     <button type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
   </form>
