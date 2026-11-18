@@ -134,4 +134,44 @@ describe('/api/projects (servidor real)', () => {
     assert.equal((await put(root, 'nueva_app', '<script>')).status, 400);
     assert.equal((await root('/api/projects')).json.nueva_app, 'Proyecto Nuevo');
   });
+
+  const rename = (api, from, to) => api('/api/projects/rename', 'POST', { from, to });
+  const fileMap = () => JSON.parse(readFileSync(join(dir, 'users.json'), 'utf8')).projects;
+
+  it('renombrar: un usuario común recibe 403 y nada cambia', async () => {
+    assert.equal((await rename(ana, 'Mide', 'Otro')).status, 403);
+    assert.equal(fileMap().ajena, 'Mide');
+  });
+
+  it('renombrar cambia todas las apps del proyecto, también las que no están en apps.json visible', async () => {
+    const before = Object.entries(fileMap()).filter(([, v]) => v === 'Mide').map(([k]) => k).sort();
+    assert.ok(before.length >= 3, 'Mide tiene varias apps (ajena + las del mapa inicial)');
+    const res = await rename(root, 'Mide', '  Mide   Chat ');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.project, 'Mide Chat');
+    assert.deepEqual([...res.json.apps].sort(), before);
+    const map = fileMap();
+    for (const id of before) assert.equal(map[id], 'Mide Chat');
+    assert.ok(!Object.values(map).includes('Mide'));
+    assert.match(out, /Proyecto Mide → Mide Chat \(\d+ apps\) · por root/);
+  });
+
+  it('cambiar solo mayúsculas renombra (no se confunde con "ya existe")', async () => {
+    assert.equal((await rename(root, 'Mide Chat', 'MIDE CHAT')).json.project, 'MIDE CHAT');
+    assert.equal(fileMap().ajena, 'MIDE CHAT');
+  });
+
+  it('renombrar al nombre de otro proyecto los junta bajo el existente', async () => {
+    const res = await rename(root, 'Proyecto Nuevo', 'santander');
+    assert.equal(res.json.project, 'Santander');
+    assert.equal(fileMap().nueva_app, 'Santander');
+    assert.ok(!Object.values(fileMap()).includes('Proyecto Nuevo'));
+  });
+
+  it('renombrar: vacío o inválido 400, proyecto inexistente 404', async () => {
+    assert.equal((await rename(root, 'Santander', '   ')).status, 400);
+    assert.equal((await rename(root, 'Santander', 'a<b')).status, 400);
+    assert.equal((await rename(root, 'No Existe', 'X')).status, 404);
+    assert.equal(fileMap().nueva_app, 'Santander');
+  });
 });

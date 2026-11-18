@@ -65,6 +65,54 @@
     else if (e.key === 'Escape') { e.preventDefault(); projEditing = null; }
   }
 
+  // Renombrar un proyecto completo desde su renglón de grupo: cambia todas sus apps (de todas las pestañas)
+  let groupEditing = $state(null); // nombre del proyecto que se está renombrando
+  let groupDraft = $state('');
+  let groupError = $state(null); // { group, message }
+
+  function startGroupEdit(group) {
+    groupEditing = group;
+    groupDraft = group;
+    groupError = null;
+  }
+
+  async function saveGroupEdit(group) {
+    if (groupEditing !== group || projSaving) return;
+    const next = groupDraft.replace(/\s+/g, ' ').trim();
+    if (!next || next === group) {
+      groupEditing = null;
+      return;
+    }
+    projSaving = true;
+    try {
+      const res = await fetch('/api/projects/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: group, to: next }),
+      });
+      if (res.status === 401) return onLogout(false);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const map = { ...PROJECT_BY_APP };
+      for (const id of data.apps) map[id] = data.project;
+      PROJECT_BY_APP = map;
+      // El grupo renombrado conserva si estaba plegado
+      const { [group]: wasFolded, ...rest } = collapsedGroups;
+      collapsedGroups = wasFolded ? { ...rest, [data.project]: true } : rest;
+      groupEditing = null;
+    } catch (e) {
+      groupError = { group, message: e.message || 'No se pudo renombrar' };
+      groupEditing = null;
+    } finally {
+      projSaving = false;
+    }
+  }
+
+  function groupKeydown(e, group) {
+    if (e.key === 'Enter') { e.preventDefault(); saveGroupEdit(group); }
+    else if (e.key === 'Escape') { e.preventDefault(); groupEditing = null; }
+  }
+
   // Al aparecer el campo de edición, toma el foco y selecciona el texto
   function focusSelect(node) {
     node.focus();
@@ -845,11 +893,41 @@
                 {@const folded = !!collapsedGroups[row.group]}
                 <tr class="group-row">
                   <td colspan="13">
-                    <button type="button" class="group-toggle" aria-expanded={!folded} onclick={() => (collapsedGroups[row.group] = !folded)}>
-                      <span class="group-caret" class:folded>▾</span>
-                      {row.group}
-                      <span class="group-count">{row.count} {row.count === 1 ? 'app' : 'apps'}</span>
-                    </button>
+                    {#if isSuper && groupEditing === row.group}
+                      <span class="group-toggle group-editing">
+                        <span class="group-caret" class:folded>▾</span>
+                        <input
+                          class="proj-input group-input"
+                          list="proj-names"
+                          maxlength="40"
+                          aria-label="Nuevo nombre del proyecto {row.group}"
+                          bind:value={groupDraft}
+                          disabled={projSaving}
+                          use:focusSelect
+                          onkeydown={(e) => groupKeydown(e, row.group)}
+                          onblur={() => saveGroupEdit(row.group)}
+                        />
+                        <span class="group-count">{row.count} {row.count === 1 ? 'app' : 'apps'}</span>
+                      </span>
+                    {:else}
+                      <button type="button" class="group-toggle" aria-expanded={!folded} onclick={() => (collapsedGroups[row.group] = !folded)}>
+                        <span class="group-caret" class:folded>▾</span>
+                        {row.group}
+                        <span class="group-count">{row.count} {row.count === 1 ? 'app' : 'apps'}</span>
+                      </button>
+                      {#if isSuper}
+                        <button
+                          type="button"
+                          class="group-rename"
+                          onclick={() => startGroupEdit(row.group)}
+                          title="Renombrar proyecto (cambia todas sus apps)"
+                          aria-label="Renombrar proyecto {row.group}"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                        </button>
+                      {/if}
+                    {/if}
+                    {#if groupError?.group === row.group}<span class="proj-error group-error" role="alert">{groupError.message}</span>{/if}
                   </td>
                 </tr>
               {:else}
@@ -2202,6 +2280,58 @@
   .group-count {
     font-weight: 500;
     color: var(--muted-foreground);
+  }
+
+  .group-editing {
+    cursor: default;
+  }
+
+  .group-input {
+    width: 220px;
+    min-width: 0;
+    padding: 2px 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  /* Lápiz para renombrar el proyecto: discreto, aparece al pasar por el renglón del grupo */
+  .group-rename {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin-left: 4px;
+    padding: 0;
+    vertical-align: middle;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+  }
+
+  .group-rename svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .group-row:hover .group-rename,
+  .group-rename:focus-visible {
+    opacity: 1;
+  }
+
+  .group-rename:hover {
+    border-color: var(--border);
+    background: #fff;
+    color: var(--foreground);
+  }
+
+  .group-error {
+    display: inline;
+    margin-left: 10px;
   }
 
   .nowrap {

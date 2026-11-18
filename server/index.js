@@ -120,6 +120,17 @@ async function handleApi(req, res, url) {
     const ids = (await allowedApps(user)).map((a) => a.id);
     return send(res, 200, Object.fromEntries(ids.filter((id) => map[id]).map((id) => [id, map[id]])));
   }
+  if (path === '/api/projects/rename' && req.method === 'POST') {
+    if (user.role !== 'superadmin') return send(res, 403, { error: 'Solo superadmin' });
+    const { from, to } = await readBody(req);
+    try {
+      const { project, apps } = store.renameProject(String(from ?? ''), to);
+      console.log(`Proyecto ${from} → ${project} (${apps.length} apps) · por ${user.username}`);
+      return send(res, 200, { ok: true, project, apps });
+    } catch (e) {
+      return send(res, /no encontrado/.test(e.message) ? 404 : 400, { error: e.message });
+    }
+  }
   const projMatch = path.match(/^\/api\/projects\/([^/]+)$/);
   if (projMatch && req.method === 'PUT') {
     if (user.role !== 'superadmin') return send(res, 403, { error: 'Solo superadmin' });

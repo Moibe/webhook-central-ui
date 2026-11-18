@@ -193,10 +193,31 @@ export const projectMap = () => ({ ...(load().projects ?? DEFAULT_PROJECTS) });
 
 // Asigna (o con vacío quita) el proyecto de una app. Si el nombre ya existe con otras mayúsculas
 // se usa el existente, para que "mide" no abra un grupo aparte de "Mide".
-export function setProject(appId, name) {
+function cleanProjectName(name) {
   const clean = String(name ?? '').replace(/\s+/g, ' ').trim();
   if (clean.length > 40) throw new Error('Nombre de proyecto demasiado largo (máx. 40)');
   if (/[\u0000-\u001f<>]/.test(clean)) throw new Error('Nombre de proyecto inválido');
+  return clean;
+}
+
+// Renombra un proyecto: cambia el nombre en todas sus apps (de todas las pestañas). Si el nombre nuevo
+// ya es de otro proyecto, ambos se juntan bajo el existente. Cambiar solo mayúsculas también vale.
+export function renameProject(from, to) {
+  const clean = cleanProjectName(to);
+  if (!clean) throw new Error('El nombre del proyecto no puede quedar vacío');
+  const db = load();
+  const map = { ...(db.projects ?? DEFAULT_PROJECTS) };
+  const apps = Object.keys(map).filter((id) => map[id] === from);
+  if (!apps.length) throw new Error('Proyecto no encontrado');
+  const target = Object.values(map).find((v) => v !== from && v.toLowerCase() === clean.toLowerCase()) ?? clean;
+  for (const id of apps) map[id] = target;
+  db.projects = map;
+  save(db);
+  return { project: target, apps };
+}
+
+export function setProject(appId, name) {
+  const clean = cleanProjectName(name);
   const db = load();
   const map = { ...(db.projects ?? DEFAULT_PROJECTS) };
   if (clean) map[appId] = Object.values(map).find((v) => v.toLowerCase() === clean.toLowerCase()) ?? clean;
