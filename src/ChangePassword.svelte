@@ -35,6 +35,9 @@
   <form class="card" onsubmit={submit}>
     <h1>Crea tu contraseña</h1>
     <p>Hola {user.username}, estás usando una contraseña temporal. Elige la tuya para continuar.</p>
+    <!-- Usuario oculto: así el navegador reconoce un cambio de contraseña de esta cuenta y ofrece
+         actualizar la guardada (la temporal) por la nueva, en lugar de dejar guardada la temporal -->
+    <input class="sr-user" type="text" name="username" autocomplete="username" value={user.username} readonly tabindex="-1" aria-hidden="true" />
     <label for="cp-cur">Contraseña temporal</label>
     <PasswordInput id="cp-cur" autocomplete="current-password" bind:value={current} required />
     <label for="cp-new">Nueva contraseña (mín. 8)</label>
@@ -60,4 +63,8 @@
   button:disabled { opacity: 0.6; cursor: default; }
   button.link { margin-top: 0; background: none; color: var(--muted-foreground); font-size: 0.85rem; }
   .err { color: var(--destructive); margin: 0; }
+  .sr-user {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
 </style>
