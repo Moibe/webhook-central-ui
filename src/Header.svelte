@@ -55,11 +55,10 @@
     border-bottom: 1px solid var(--border);
   }
 
+  /* A todo lo ancho: el título queda a la izquierda, alineado con las pestañas Dev/Staging/Prod (16px) */
   .bar {
-    max-width: 90rem;
-    margin: 0 auto;
     height: 64px;
-    padding: 0 24px;
+    padding: 0 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
