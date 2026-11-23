@@ -50,6 +50,8 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       PROJECT_BY_APP = data.map; // el cambio alcanza a la app en Dev, Staging y Prod
+      // Su grupo nuevo se abre: si no, la app que acabas de mover desaparecería dentro de un grupo plegado
+      if (data.project) expandedGroups[data.project] = true;
       projEditing = null;
     } catch (e) {
       projError = e.message || 'No se pudo guardar';
@@ -94,9 +96,9 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       PROJECT_BY_APP = data.map;
-      // El grupo renombrado conserva si estaba plegado
-      const { [group]: wasFolded, ...rest } = collapsedGroups;
-      collapsedGroups = wasFolded ? { ...rest, [data.project]: true } : rest;
+      // El grupo renombrado conserva si estaba desplegado
+      const { [group]: wasOpen, ...rest } = expandedGroups;
+      expandedGroups = wasOpen ? { ...rest, [data.project]: true } : rest;
       groupEditing = null;
     } catch (e) {
       groupError = { group, message: e.message || 'No se pudo renombrar' };
@@ -349,8 +351,9 @@
 
   const visibleProjects = $derived(envProjects.filter((p) => matchesFilters(p)));
 
-  // Ordenado por Proyecto, las apps de un mismo proyecto (2 o más) llevan un renglón de grupo que las pliega juntas
-  let collapsedGroups = $state({}); // nombre del proyecto -> true si está plegado
+  // Ordenado por Proyecto, cada proyecto lleva un renglón de grupo que pliega sus apps juntas.
+  // Por default todos aparecen plegados: aquí solo se anotan los que el usuario abre.
+  let expandedGroups = $state({}); // nombre del proyecto -> true si está desplegado
   const tableRows = $derived.by(() => {
     if (sortKey !== 'project') return sortedProjects.map((p) => ({ key: p.id, project: p }));
     const counts = {};
@@ -365,7 +368,7 @@
       const grouped = g !== '—'; // todo proyecto lleva agrupador, aunque tenga una sola app; las sin proyecto no
       if (grouped && g !== current) rows.push({ key: 'grupo:' + g, group: g, count: counts[g] });
       current = g;
-      if (!(grouped && collapsedGroups[g])) rows.push({ key: p.id, project: p, inGroup: grouped });
+      if (!grouped || expandedGroups[g]) rows.push({ key: p.id, project: p, inGroup: grouped });
     }
     return rows;
   });
@@ -888,7 +891,7 @@
           <tbody>
             {#each tableRows as row (row.key)}
               {#if row.group}
-                {@const folded = !!collapsedGroups[row.group]}
+                {@const folded = !expandedGroups[row.group]}
                 <tr class="group-row">
                   <td colspan="13">
                     {#if isSuper && groupEditing === row.group}
@@ -908,7 +911,7 @@
                         <span class="group-count">{row.count} {row.count === 1 ? 'app' : 'apps'}</span>
                       </span>
                     {:else}
-                      <button type="button" class="group-toggle" aria-expanded={!folded} onclick={() => (collapsedGroups[row.group] = !folded)}>
+                      <button type="button" class="group-toggle" aria-expanded={!folded} onclick={() => (expandedGroups[row.group] = folded)}>
                         <span class="group-caret" class:folded>▾</span>
                         {row.group}
                         <span class="group-count">{row.count} {row.count === 1 ? 'app' : 'apps'}</span>
