@@ -71,6 +71,17 @@ async function allowedApps(user) {
   return apps.filter((a) => user.role === 'superadmin' || a.owner?.toLowerCase() === user.username.toLowerCase());
 }
 
+// Instancia -> proyecto, para las apps que ve este usuario (el proyecto de cada una es el de su app base)
+async function projectsFor(user) {
+  const map = store.projectMap();
+  const out = {};
+  for (const { id } of await allowedApps(user)) {
+    const name = map[store.appBase(id)];
+    if (name) out[id] = name;
+  }
+  return out;
+}
+
 async function handleApi(req, res, url) {
   const path = url.pathname;
   const ip = req.socket.remoteAddress;
@@ -114,19 +125,16 @@ async function handleApi(req, res, url) {
 
   if (path === '/api/apps') return send(res, 200, await allowedApps(user));
 
-  // Proyecto de cada app: todos lo leen (solo de sus apps); solo el superadmin lo cambia
-  if (path === '/api/projects' && req.method === 'GET') {
-    const map = store.projectMap();
-    const ids = (await allowedApps(user)).map((a) => a.id);
-    return send(res, 200, Object.fromEntries(ids.filter((id) => map[id]).map((id) => [id, map[id]])));
-  }
+  // Proyecto de cada app: todos lo leen (solo de sus apps); solo el superadmin lo cambia.
+  // Se guarda por app y aquí se reparte a cada instancia: Dev, Staging y Prod siempre dicen lo mismo.
+  if (path === '/api/projects' && req.method === 'GET') return send(res, 200, await projectsFor(user));
   if (path === '/api/projects/rename' && req.method === 'POST') {
     if (user.role !== 'superadmin') return send(res, 403, { error: 'Solo superadmin' });
     const { from, to } = await readBody(req);
     try {
       const { project, apps } = store.renameProject(String(from ?? ''), to);
       console.log(`Proyecto ${from} → ${project} (${apps.length} apps) · por ${user.username}`);
-      return send(res, 200, { ok: true, project, apps });
+      return send(res, 200, { ok: true, project, map: await projectsFor(user) });
     } catch (e) {
       return send(res, /no encontrado/.test(e.message) ? 404 : 400, { error: e.message });
     }
@@ -139,8 +147,8 @@ async function handleApi(req, res, url) {
     const { project } = await readBody(req);
     try {
       const saved = store.setProject(appId, project);
-      console.log(`Proyecto de ${appId} → ${saved || '(sin proyecto)'} · por ${user.username}`);
-      return send(res, 200, { ok: true, project: saved });
+      console.log(`Proyecto de ${store.appBase(appId)} (todos sus ambientes) → ${saved || '(sin proyecto)'} · por ${user.username}`);
+      return send(res, 200, { ok: true, project: saved, map: await projectsFor(user) });
     } catch (e) {
       return send(res, 400, { error: e.message });
     }
@@ -225,6 +233,12 @@ async function handleStatic(res, url) {
   }
   res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream' });
   res.end(data);
+}
+
+// Una sola vez: el proyecto pasa de guardarse por instancia a guardarse por app. Donde los ambientes
+// no coincidían manda Dev; lo descartado queda aquí en el log (y el mapa viejo en projects_legacy).
+for (const c of store.migrateProjects()) {
+  console.log(`Proyecto unificado: ${c.id} decía "${c.dropped}", queda "${c.kept}" como ${c.from} (regla: manda Dev)`);
 }
 
 createServer(async (req, res) => {

@@ -15,7 +15,8 @@
   const POLL_INTERVAL_MS = 4000;
   const FINISHED_TTL_MS = 10 * 60 * 1000;
 
-  // Proyecto de cada app (app id -> nombre). Vive en el servidor (data/users.json); solo el superadmin lo edita
+  // Proyecto de cada app (app id -> nombre). Vive en el servidor (data/users.json); solo el superadmin lo edita.
+  // El servidor lo guarda por app, no por ambiente: nexus_back_dev, _staging y nexus_back siempre traen el mismo
   let PROJECT_BY_APP = $state({});
   let projEditing = $state(null); // id de la app cuya celda Proyecto se está editando
   let projDraft = $state('');
@@ -48,8 +49,7 @@
       if (res.status === 401) return onLogout(false);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      const { [project.id]: _antes, ...rest } = PROJECT_BY_APP;
-      PROJECT_BY_APP = data.project ? { ...rest, [project.id]: data.project } : rest;
+      PROJECT_BY_APP = data.map; // el cambio alcanza a la app en Dev, Staging y Prod
       projEditing = null;
     } catch (e) {
       projError = e.message || 'No se pudo guardar';
@@ -93,9 +93,7 @@
       if (res.status === 401) return onLogout(false);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      const map = { ...PROJECT_BY_APP };
-      for (const id of data.apps) map[id] = data.project;
-      PROJECT_BY_APP = map;
+      PROJECT_BY_APP = data.map;
       // El grupo renombrado conserva si estaba plegado
       const { [group]: wasFolded, ...rest } = collapsedGroups;
       collapsedGroups = wasFolded ? { ...rest, [data.project]: true } : rest;
@@ -1009,7 +1007,9 @@
                       type="button"
                       class="proj-edit"
                       onclick={() => startProjEdit(project)}
-                      title="Cambiar proyecto (vacío = sin proyecto)"
+                      title={appEnvs(project).length > 1
+                        ? `Cambiar proyecto: aplica a la app en ${appEnvs(project).map((x) => ENV_LABELS[x.env]).join(', ').replace(/, ([^,]+)$/, ' y $1')} (vacío = sin proyecto)`
+                        : 'Cambiar proyecto (vacío = sin proyecto)'}
                       aria-label="Cambiar proyecto de {project.name}"
                     >
                       {#if PROJECT_BY_APP[project.id]}{PROJECT_BY_APP[project.id]}{:else}<span class="muted">—</span>{/if}

@@ -189,7 +189,54 @@ const DEFAULT_PROJECTS = {
   'santander_ia_dev': 'Santander', 'santander_ia': 'Santander', 'santander_closed': 'Santander', 'santander_closed_dev': 'Santander',
 };
 
-export const projectMap = () => ({ ...(load().projects ?? DEFAULT_PROJECTS) });
+// Regla: el proyecto es de la app, no de cada ambiente. nexus_back_dev, nexus_back_staging y nexus_back son
+// la misma app (mismo criterio que la columna Ambientes de la UI), así que se guarda una sola vez por app
+// (db.app_projects: app base -> nombre) y Dev, Staging y Prod no pueden quedar con nombres distintos.
+export const appBase = (id) => String(id).replace(/[-_](dev|staging)$/, '');
+const envRank = (id) => (/[-_]dev$/.test(id) ? 0 : /[-_]staging$/.test(id) ? 1 : 2); // dev, staging, prod
+
+// Del mapa viejo (un nombre por instancia) al nuevo (uno por app). Si los ambientes no coinciden manda Dev;
+// si Dev no tiene proyecto, Staging; y si tampoco, Prod. Devuelve también qué nombres se descartaron.
+function fromLegacy(legacy) {
+  const map = {};
+  const pick = {};
+  for (const id of Object.keys(legacy).sort((a, b) => envRank(a) - envRank(b))) {
+    const base = appBase(id);
+    if (!legacy[id]) continue;
+    if (!(base in map)) {
+      map[base] = legacy[id];
+      pick[base] = id;
+    }
+  }
+  const conflicts = [];
+  for (const [id, name] of Object.entries(legacy)) {
+    const base = appBase(id);
+    if (name && name !== map[base]) conflicts.push({ app: base, kept: map[base], from: pick[base], dropped: name, id });
+  }
+  return { map, conflicts };
+}
+
+// Guarda el mapa por app; si aún existía el viejo por instancia, lo respalda en projects_legacy
+function saveProjects(db, map) {
+  if (db.projects && !db.projects_legacy) db.projects_legacy = db.projects;
+  delete db.projects;
+  db.app_projects = map;
+  save(db);
+}
+
+const familyMap = (db) => db.app_projects ?? fromLegacy(db.projects ?? DEFAULT_PROJECTS).map;
+
+export const projectMap = () => ({ ...familyMap(load()) });
+
+// Una sola vez (al arrancar): pasa el mapa por instancia al mapa por app. El viejo queda en
+// projects_legacy por si hubiera que revisar algo. Devuelve los nombres que se descartaron para el log.
+export function migrateProjects() {
+  const db = load();
+  if (db.app_projects || !db.projects) return [];
+  const { map, conflicts } = fromLegacy(db.projects);
+  saveProjects(db, map);
+  return conflicts;
+}
 
 // Asigna (o con vacío quita) el proyecto de una app. Si el nombre ya existe con otras mayúsculas
 // se usa el existente, para que "mide" no abra un grupo aparte de "Mide".
@@ -206,25 +253,25 @@ export function renameProject(from, to) {
   const clean = cleanProjectName(to);
   if (!clean) throw new Error('El nombre del proyecto no puede quedar vacío');
   const db = load();
-  const map = { ...(db.projects ?? DEFAULT_PROJECTS) };
-  const apps = Object.keys(map).filter((id) => map[id] === from);
+  const map = { ...familyMap(db) };
+  const apps = Object.keys(map).filter((base) => map[base] === from);
   if (!apps.length) throw new Error('Proyecto no encontrado');
   const target = Object.values(map).find((v) => v !== from && v.toLowerCase() === clean.toLowerCase()) ?? clean;
-  for (const id of apps) map[id] = target;
-  db.projects = map;
-  save(db);
+  for (const base of apps) map[base] = target;
+  saveProjects(db, map);
   return { project: target, apps };
 }
 
+// Se puede llamar con cualquier instancia (nexus_back_staging): el cambio es para la app en sus tres ambientes
 export function setProject(appId, name) {
   const clean = cleanProjectName(name);
+  const base = appBase(appId);
   const db = load();
-  const map = { ...(db.projects ?? DEFAULT_PROJECTS) };
-  if (clean) map[appId] = Object.values(map).find((v) => v.toLowerCase() === clean.toLowerCase()) ?? clean;
-  else delete map[appId];
-  db.projects = map;
-  save(db);
-  return map[appId] ?? '';
+  const map = { ...familyMap(db) };
+  if (clean) map[base] = Object.values(map).find((v) => v.toLowerCase() === clean.toLowerCase()) ?? clean;
+  else delete map[base];
+  saveProjects(db, map);
+  return map[base] ?? '';
 }
 
 export function deleteUser(username) {
