@@ -8,9 +8,9 @@
   const LOGS_BASE = '/api/logs';
   const ENV_LABELS = { dev: 'Dev', staging: 'Staging', prod: 'Prod' };
   const PM2_STATUS_URL = WEBHOOK_BASE + '/hooks/pm2-status';
-  const POWER_URL = WEBHOOK_BASE + '/hooks/power';
-  const POWER_TOKEN = import.meta.env.VITE_POWER_TOKEN ?? '';
-  // Apps que no se apagan desde aquí (el botón vive en ellas); mismo filtro en power.sh
+  // Apagar/encender y refrescar van por el servidor (/api/power, /api/refresh): él pone el token, el navegador nunca lo ve
+  let powerEnabled = $state(false);
+  // Apps que no se apagan desde aquí (el botón vive en ellas); mismo filtro en el servidor y en power.sh
   const POWER_PROTECTED = ['webhook-listener', 'webhook-central-ui'];
   const POLL_INTERVAL_MS = 4000;
   const FINISHED_TTL_MS = 10 * 60 * 1000;
@@ -450,7 +450,7 @@
   }
 
   function canPower(project) {
-    return isSuper && !!project.pm2_name && !!POWER_TOKEN && !POWER_PROTECTED.includes(project.pm2_name);
+    return isSuper && !!project.pm2_name && powerEnabled && !POWER_PROTECTED.includes(project.pm2_name);
   }
 
   // En dev basta un clic de confirmación; en prod (o sin env) hay que escribir el id
@@ -488,8 +488,11 @@
     powerBusy = true;
     powerError = '';
     try {
-      const qs = new URLSearchParams({ action, id: project.id, token: POWER_TOKEN });
-      const res = await fetch(`${POWER_URL}?${qs}`, { method: 'POST' });
+      const res = await fetch('/api/power', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, id: project.id }),
+      });
       const data = await res.json().catch(() => null);
       if (data?.ok) {
         powerTarget = null;
@@ -504,7 +507,7 @@
   }
 
   function canRefresh(project) {
-    return isSuper && !!project.refresh_url && !!POWER_TOKEN && project.env === 'dev';
+    return isSuper && !!project.refresh_url && powerEnabled && project.env === 'dev';
   }
 
   // Deshacer solo tiene sentido si la última actualización de la app cambió datos:
@@ -570,9 +573,11 @@
     refreshPhase = 'sending';
     refreshError = '';
     try {
-      const qs = new URLSearchParams({ token: POWER_TOKEN });
-      const url = refreshMode === 'deshacer' ? project.refresh_undo_url : project.refresh_url;
-      const res = await fetch(`${WEBHOOK_BASE}${url}?${qs}`, { method: 'POST' });
+      const res = await fetch('/api/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: project.id, mode: refreshMode }),
+      });
       const data = await res.json().catch(() => null);
       if (data?.ok && data.run_id) {
         refreshRunId = data.run_id;
@@ -611,6 +616,14 @@
   }
 
   loadProjects();
+
+  // El servidor dice si tiene el token de los hooks; sin él, los botones de apagar/refrescar no aparecen
+  if (isSuper) {
+    fetch('/api/power', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => (powerEnabled = !!d?.enabled))
+      .catch(() => {});
+  }
 
   $effect(() => {
     refreshDeploys();

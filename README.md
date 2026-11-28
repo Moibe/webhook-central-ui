@@ -18,6 +18,18 @@ queda apagado.
 - Al crear un usuario, la casilla "Enviar contraseña por correo al crear" viene marcada si hay correo capturado y el servicio está configurado; desmarcarla vale solo para ese alta.
 - Pruebas: `npm test` (servicio de ART falseado en localhost; no llama al real).
 
+## Apagar/encender y refrescar dev
+
+Los botones del superadmin llaman a `/api/power` y `/api/refresh` de este servidor. Él valida la sesión (solo
+superadmin), la app y las reglas (apps protegidas, refrescar solo dev) y llama al hook `power`/`refrescar-*` agregando
+el token. El navegador nunca ve el token: antes iba en `VITE_POWER_TOKEN`, dentro del JS, y ya no se usa.
+
+- El token se lee en cada llamada de `.power_token` junto a `apps.json` (`/home/mbriseno/webhook-central/.power_token`),
+  el mismo archivo que validan `power.sh` y `refresh.sh`. Rotarlo = cambiar ese archivo; no hace falta reiniciar.
+- Se puede sobreescribir con `POWER_TOKEN` o `POWER_TOKEN_FILE`; el webhook con `WEBHOOK_URL` (por defecto `http://172.10.30.15:8090`).
+- Sin token, los botones no aparecen.
+- Pruebas: `server/power.test.js` (webhook falso; verifica que el token nunca llegue al navegador ni a los logs).
+
 ---
 
 This template should help get you started developing with Svelte in Vite.

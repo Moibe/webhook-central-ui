@@ -13,6 +13,13 @@ const APPS_FILE = process.env.APPS_FILE ?? '/home/mbriseno/webhook-central/apps.
 const LOGS_DIR = resolve(process.env.LOGS_DIR ?? '/home/mbriseno/webhook-central/logs');
 const COOKIE = 'wc_session';
 
+// Apagar/encender y refrescar dev pasan por aquí: el navegador nunca ve el token de esos hooks.
+// Se lee en cada llamada del mismo archivo que valida power.sh/refresh.sh, así que rotarlo no requiere reiniciar.
+const WEBHOOK_URL = process.env.WEBHOOK_URL ?? 'http://172.10.30.15:8090';
+const POWER_TOKEN_FILE = process.env.POWER_TOKEN_FILE ?? resolve(dirname(APPS_FILE), '.power_token');
+const POWER_PROTECTED = ['webhook-listener', 'webhook-central-ui']; // mismo filtro que power.sh
+const HOOK_PATH = /^\/hooks\/[\w.-]+$/;
+
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.ico': 'image/x-icon',
@@ -80,6 +87,26 @@ async function projectsFor(user) {
     if (name) out[id] = name;
   }
   return out;
+}
+
+async function powerToken() {
+  if (process.env.POWER_TOKEN) return process.env.POWER_TOKEN.trim();
+  try { return (await readFile(POWER_TOKEN_FILE, 'utf8')).trim(); } catch { return ''; }
+}
+
+// Llama a un hook protegido agregando el token y devuelve su respuesta tal cual (status + JSON)
+async function callProtectedHook(res, hookPath, params) {
+  const token = await powerToken();
+  if (!token) return send(res, 503, { error: 'Token del hook no configurado en el servidor' });
+  const qs = new URLSearchParams({ ...params, token });
+  let r;
+  try {
+    r = await fetch(`${WEBHOOK_URL}${hookPath}?${qs}`, { method: 'POST', signal: AbortSignal.timeout(60_000) });
+  } catch {
+    return send(res, 502, { error: 'No se pudo contactar al webhook' });
+  }
+  const data = await r.json().catch(() => null);
+  return send(res, data ? r.status : 502, data ?? { error: `El webhook respondió HTTP ${r.status}` });
 }
 
 async function handleApi(req, res, url) {
@@ -152,6 +179,28 @@ async function handleApi(req, res, url) {
     } catch (e) {
       return send(res, 400, { error: e.message });
     }
+  }
+
+  if (path === '/api/power' || path === '/api/refresh') {
+    if (user.role !== 'superadmin') return send(res, 403, { error: 'Solo superadmin' });
+    if (path === '/api/power' && req.method === 'GET') return send(res, 200, { enabled: !!(await powerToken()) });
+    if (req.method !== 'POST') return send(res, 405, { error: 'Método no permitido' });
+    const { id, action, mode } = await readBody(req);
+    const app = (await allowedApps(user)).find((a) => a.id === id);
+    if (!app) return send(res, 404, { error: 'App no encontrada' });
+
+    if (path === '/api/power') {
+      if (action !== 'stop' && action !== 'start') return send(res, 400, { error: 'Acción inválida' });
+      if (!app.pm2_name || POWER_PROTECTED.includes(app.pm2_name)) return send(res, 400, { error: 'Esta app no se apaga desde aquí' });
+      console.log(`Power ${action} ${app.id} · por ${user.username}`);
+      return callProtectedHook(res, '/hooks/power', { action, id: app.id });
+    }
+
+    if (app.env !== 'dev') return send(res, 400, { error: 'Solo las apps de dev se refrescan' });
+    const hook = mode === 'deshacer' ? app.refresh_undo_url : app.refresh_url;
+    if (typeof hook !== 'string' || !HOOK_PATH.test(hook)) return send(res, 400, { error: 'Esta app no tiene esa acción' });
+    console.log(`Refresh (${mode === 'deshacer' ? 'deshacer' : 'refrescar'}) ${app.id} · por ${user.username}`);
+    return callProtectedHook(res, hook, {});
   }
 
   if (path === '/api/deploys') {
